@@ -31,6 +31,12 @@ import warnings
 import os
 import hjson
 import random
+import torch
+import sys
+import torch.nn as nn
+import torch.optim as optim
+from statsmodels.tsa.arima.model import ARIMA
+from scipy.stats import entropy as scipy_entropy
 warnings.filterwarnings('ignore')
 
 # 设置中文字体支持
@@ -53,10 +59,25 @@ class DoubleColorBallAnalyzer:
             'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15',
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0'
         ]
-        
+    
         self.session = requests.Session()
         self.lottery_data = []
-        
+
+        # ML related
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.red_model = None      # LSTM for red (multi-label)
+        self.blue_model = None     # LSTM for blue (single-label)
+        self.seq_len = 10
+        self.trained = False
+
+        # Reproducibility
+        self.seed = 2025
+        random.seed(self.seed)
+        np.random.seed(self.seed)
+        torch.manual_seed(self.seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(self.seed)
+
         # 配置session
         self._setup_session()
         
@@ -413,6 +434,292 @@ class DoubleColorBallAnalyzer:
         
         return red_counter, blue_counter
     
+    # -------------------- ML helpers & models --------------------
+    class _SeqPredictor(nn.Module):
+        """Generic LSTM predictor that emits a single-step prediction."""
+        def __init__(self, input_size, hidden_size, output_size, output_type="sigmoid", dropout=0.2):
+            super().__init__()
+            self.lstm = nn.LSTM(input_size=input_size, hidden_size=hidden_size, batch_first=True)
+            self.dropout = nn.Dropout(p=dropout)
+            self.head = nn.Linear(hidden_size, output_size)
+            self.output_type = output_type
+
+        def forward(self, x):
+            # x: (B, T, F)
+            out, _ = self.lstm(x)
+            last = out[:, -1, :]
+            last = self.dropout(last)
+            logits = self.head(last)
+            if self.output_type == "sigmoid":
+                return logits, torch.sigmoid(logits)
+            elif self.output_type == "softmax":
+                return logits, torch.softmax(logits, dim=-1)
+            else:
+                return logits, logits
+            
+    def _engineered_features(self, reds):
+        """
+        Hand-crafted features from a draw:
+        - sum (min 21, max 183) -> min-max normalized
+        - span (max-min), max 32 -> normalized to [0,1]
+        - odd_ratio, even_ratio
+        """
+        s = sum(reds)
+        s_norm = (s - 21.0) / 162.0  # 183-21=162
+        span = max(reds) - min(reds)
+        span_norm = span / 32.0
+        odd = sum(1 for r in reds if r % 2 == 1)
+        even = 6 - odd
+        return np.array([s_norm, span_norm, odd / 6.0, even / 6.0], dtype=np.float32)
+    
+    def _onehot_multi(self, reds, blue):
+        """
+        Convert a draw to multi-hot (33) + one-hot (16) + engineered(4) -> (53,)
+        """
+        red_vec = np.zeros(33, dtype=np.float32)
+        for r in reds:
+            if 1 <= r <= 33:
+                red_vec[r-1] = 1.0
+        blue_vec = np.zeros(16, dtype=np.float32)
+        if 1 <= blue <= 16:
+            blue_vec[blue-1] = 1.0
+        feats = self._engineered_features(reds)
+        return np.concatenate([red_vec, blue_vec, feats], axis=0)
+
+    def _build_sequence_dataset(self, seq_len=10):
+        """
+        Build X (N, seq_len, 53), y_red (N,33), y_blue (N,)
+        Newest-first in memory -> sort to oldest-first for sequences.
+        """
+        if not self.lottery_data or len(self.lottery_data) <= seq_len:
+            return None
+        data_sorted = sorted(self.lottery_data, key=lambda r: (r["date"], r["period"]))
+        feats = [self._onehot_multi(r["red_balls"], r["blue_ball"]) for r in data_sorted]
+        X, y_red, y_blue = [], [], []
+        for i in range(seq_len, len(feats)):
+            X.append(np.stack(feats[i-seq_len:i], axis=0))  # (seq_len,53)
+            red_vec = np.zeros(33, dtype=np.float32)
+            for rr in data_sorted[i]["red_balls"]:
+                red_vec[rr-1] = 1.0
+            y_red.append(red_vec)
+            y_blue.append(int(data_sorted[i]["blue_ball"]) - 1)
+        X = np.stack(X, axis=0).astype(np.float32)
+        y_red = np.stack(y_red, axis=0).astype(np.float32)
+        y_blue = np.array(y_blue, dtype=np.int64)
+        return X, y_red, y_blue
+    
+    def _sym_kl(self, p, q):
+        p = np.clip(np.asarray(p, dtype=np.float64), 1e-12, 1.0)
+        q = np.clip(np.asarray(q, dtype=np.float64), 1e-12, 1.0)
+        kl_pq = np.sum(p * np.log(p / q))
+        kl_qp = np.sum(q * np.log(q / p))
+        return float(kl_pq + kl_qp)
+    
+    def time_decay_weights(self, n_rows, half_life=60):
+        """Exponential time-decay weights old->new."""
+        idx = np.arange(n_rows)
+        lam = np.log(2) / max(1, half_life)
+        return np.exp(lam * (idx - n_rows + 1))
+
+    def compute_marginal_probs(self, decay_half_life=60):
+        """Time-decayed marginal probabilities for red(33) and blue(16)."""
+        if not self.lottery_data:
+            return np.ones(33)/33.0, np.ones(16)/16.0
+        data_sorted = sorted(self.lottery_data, key=lambda r: (r["date"], r["period"]))
+        reds_list = [r["red_balls"] for r in data_sorted]
+        blues_list = [r["blue_ball"] for r in data_sorted]
+        n = len(reds_list)
+        w = self.time_decay_weights(n, half_life=decay_half_life)
+        red_counts = np.zeros(33, dtype=np.float64)
+        blue_counts = np.zeros(16, dtype=np.float64)
+        for balls, wb, weight in zip(reds_list, blues_list, w):
+            for b in balls:
+                red_counts[b-1] += weight
+            blue_counts[wb-1] += weight
+        pr = red_counts / red_counts.sum() if red_counts.sum() > 0 else np.ones(33)/33.0
+        pb = blue_counts / blue_counts.sum() if blue_counts.sum() > 0 else np.ones(16)/16.0
+        return pr.astype(np.float32), pb.astype(np.float32)
+
+    def compute_entropy(self, probs):
+        """Shannon entropy (bits)."""
+        p = np.clip(np.asarray(probs, dtype=np.float64), 1e-12, 1.0)
+        return float(scipy_entropy(p, base=2))
+
+    def train_ml_model(self, seq_len=10, epochs=5, lr=1e-3, hidden_size=64, dropout=0.2):
+        """
+        Train two LSTM predictors:
+        - red: multi-label (33 outputs, BCEWithLogitsLoss)
+        - blue: single-label (16 outputs, CrossEntropyLoss)
+        """
+        self.seq_len = seq_len
+        ds = self._build_sequence_dataset(seq_len=seq_len)
+        if ds is None:
+            print("数据不足，跳过模型训练。")
+            self.trained = False
+            return
+        X, y_red, y_blue = ds
+        X_t = torch.from_numpy(X).to(self.device)
+        y_red_t = torch.from_numpy(y_red).to(self.device)
+        y_blue_t = torch.from_numpy(y_blue).to(self.device)
+
+        input_size = X_t.shape[-1]
+        self.red_model  = self._SeqPredictor(input_size, hidden_size, 33, output_type="sigmoid", dropout=dropout).to(self.device)
+        self.blue_model = self._SeqPredictor(input_size, hidden_size, 16, output_type="softmax",  dropout=dropout).to(self.device)
+
+        red_criterion = nn.BCEWithLogitsLoss()
+        blue_criterion = nn.CrossEntropyLoss()
+        red_opt = optim.Adam(self.red_model.parameters(), lr=lr)
+        blue_opt = optim.Adam(self.blue_model.parameters(), lr=lr)
+
+        batch_size = min(128, X_t.shape[0])
+        num_batches = int(np.ceil(X_t.shape[0] / batch_size))
+
+        self.red_model.train(); self.blue_model.train()
+        for ep in range(epochs):
+            perm = torch.randperm(X_t.shape[0])
+            X_t = X_t[perm]; y_red_t = y_red_t[perm]; y_blue_t = y_blue_t[perm]
+            red_loss_sum = 0.0; blue_loss_sum = 0.0
+            for bi in range(num_batches):
+                s = bi * batch_size; e = min((bi+1) * batch_size, X_t.shape[0])
+                xb = X_t[s:e]; yrb = y_red_t[s:e]; ybb = y_blue_t[s:e]
+
+                red_opt.zero_grad()
+                red_logits, _ = self.red_model(xb)
+                loss_red = red_criterion(red_logits, yrb)
+                loss_red.backward(); red_opt.step()
+
+                blue_opt.zero_grad()
+                blue_logits, _ = self.blue_model(xb)
+                loss_blue = blue_criterion(blue_logits, ybb)
+                loss_blue.backward(); blue_opt.step()
+
+                red_loss_sum += loss_red.item(); blue_loss_sum += loss_blue.item()
+            print(f"[LSTM] epoch {ep+1}/{epochs} red_loss={red_loss_sum/num_batches:.4f} blue_loss={blue_loss_sum/num_batches:.4f}")
+
+        self.trained = True
+
+    def predict_next_probabilities(self, blend_alpha="auto", decay_half_life=60):
+        """
+        Next-step probabilities for red(33) and blue(16).
+        If blend_alpha == "auto": tune alpha by comparing ML vs. marginal distributions
+        using symmetric KL divergence (smaller divergence -> larger alpha).
+        """
+        p_marg_red, p_marg_blue = self.compute_marginal_probs(decay_half_life=decay_half_life)
+        if not self.trained:
+            print("模型未训练，使用时间衰减频率作为概率。")
+            return p_marg_red, p_marg_blue
+
+        ds = self._build_sequence_dataset(seq_len=self.seq_len)
+        if ds is None:
+            return p_marg_red, p_marg_blue
+        X, _, _ = ds
+        last_seq = torch.from_numpy(X[-1:]).to(self.device)
+
+        self.red_model.eval(); self.blue_model.eval()
+        with torch.no_grad():
+            _, p_red_ml = self.red_model(last_seq)   # (1,33)
+            _, p_blue_ml = self.blue_model(last_seq) # (1,16)
+        p_red_ml = p_red_ml.squeeze(0).cpu().numpy()
+        p_blue_ml = p_blue_ml.squeeze(0).cpu().numpy()
+
+        # normalize reds into a distribution
+        p_red_ml = p_red_ml / (p_red_ml.sum() + 1e-12)
+
+        # auto-tune alpha
+        if blend_alpha == "auto":
+            d_red = self._sym_kl(p_red_ml, p_marg_red)
+            d_blue = self._sym_kl(p_blue_ml, p_marg_blue)
+            d = 0.7 * d_red + 0.3 * d_blue
+            alpha = 1.0 / (1.0 + 4.0 * d)  # heuristic scaling
+            alpha = float(np.clip(alpha, 0.25, 0.8))
+            print(f"🔧 自适应融合系数 alpha={alpha:.3f} (基于分布差异)")
+        else:
+            alpha = float(blend_alpha)
+
+        p_red = alpha * p_red_ml + (1.0 - alpha) * p_marg_red
+        p_blue = alpha * p_blue_ml + (1.0 - alpha) * p_marg_blue
+        p_red = p_red / p_red.sum(); p_blue = p_blue / p_blue.sum()
+        return p_red.astype(np.float32), p_blue.astype(np.float32)
+
+    def _arima_sum_forecast(self, horizon=1):
+            """
+            ARIMA on red sums to get (mu, low, high) for next draw.
+            """
+            try:
+                series = [sum(r["red_balls"]) for r in sorted(self.lottery_data, key=lambda r: (r["date"], r["period"]))]
+                if len(series) < 30:
+                    mu = np.mean(series)
+                    return float(mu), float(mu-20), float(mu+20)
+                model = ARIMA(series, order=(2,1,2))
+                model_fit = model.fit()
+                pred = model_fit.get_forecast(steps=horizon)
+                # predicted_mean can be ndarray/Series depending on input; coerce to ndarray
+                mu = float(np.asanyarray(pred.predicted_mean)[-1])
+                ci = pred.conf_int(alpha=0.20)  # 80%
+                try:
+                    # pandas DataFrame case
+                    low = float(ci.iloc[-1, 0]); high = float(ci.iloc[-1, 1])
+                except AttributeError:
+                    # numpy ndarray case: shape (steps, 2)
+                    low = float(ci[-1, 0]); high = float(ci[-1, 1])
+                return mu, low, high
+            except Exception as e:
+                print(f"ARIMA 预测失败，使用经验范围: {e}")
+                series = [sum(r["red_balls"]) for r in self.lottery_data]
+                mu = np.mean(series)
+                return float(mu), float(mu-25), float(mu+25)
+
+    def _sample_combo_no_replace(self, prob_red, k=6):
+        """Sample k distinct red numbers without replacement according to prob_red."""
+        prob = prob_red.copy().astype(np.float64)
+        prob = prob / prob.sum()
+        chosen = []
+        available = np.arange(1, 34)
+        for _ in range(k):
+            idxs = np.array([i-1 for i in available])
+            p = prob[idxs]; p = p / p.sum()
+            pick = np.random.choice(len(available), p=p)
+            val = int(available[pick])
+            chosen.append(val)
+            available = np.array([x for x in available if x != val])
+        return sorted(chosen)
+
+    def _monte_carlo_candidates(self, p_red, p_blue, n=2000, sum_mu=None, sum_low=None, sum_high=None):
+            """
+            Monte Carlo guided by probabilities & optional sum constraints.
+            Returns list of (reds, blue, score, entropy_bits).
+            """
+            candidates = {}
+            for _ in range(n):
+                reds = self._sample_combo_no_replace(p_red, k=6)
+                s = sum(reds)
+                if sum_low is not None and sum_high is not None and not (sum_low <= s <= sum_high):
+                    continue
+                # entropy over the selected set
+                q = np.array([p_red[r-1] for r in reds], dtype=np.float64)
+                q = q / q.sum()
+                H = self.compute_entropy(q)  # 0..log2(6)
+                mean_p = float(np.mean([p_red[r-1] for r in reds]))
+                score = 0.7 * mean_p - 0.3 * (H / np.log2(6))
+                # adaptive top-k for blue: sharper distribution -> smaller k
+                sharp = float(np.max(p_blue))
+                k_adapt = int(np.clip(6 - round(4 * sharp / (np.max(p_blue) + 1e-12)), 2, 6))
+                k_adapt = min(k_adapt, len(p_blue))
+                top_idx = np.argsort(p_blue)[-k_adapt:]
+                top_probs = p_blue[top_idx] / p_blue[top_idx].sum()
+                blue_idx = int(top_idx[np.random.choice(len(top_idx), p=top_probs)]) + 1
+                key = (tuple(reds), blue_idx)
+                if key not in candidates or score > candidates[key][0]:
+                    candidates[key] = (score, H)
+            out = []
+            for (reds, blue), (score, H) in candidates.items():
+                out.append((list(reds), int(blue), float(score), float(H)))
+            out.sort(key=lambda x: -x[2])
+            return out
+    
+    # ------------------ end of ML helpers & models ------------------
+
+
     def analyze_patterns(self):
         """分析号码规律"""
         print("\n=== 号码规律分析 ===")
@@ -463,8 +770,9 @@ class DoubleColorBallAnalyzer:
             print("数据不足，无法进行走势分析")
             return
         
-        # 最近10期的号码
-        recent_10 = self.lottery_data[:10]
+        # 最近10期的号码（按日期倒序）
+        data_sorted = sorted(self.lottery_data, key=lambda r: (r['date'], r['period']), reverse=True)
+        recent_10 = data_sorted[:10]
         
         print("最近10期开奖号码：")
         for record in recent_10:
@@ -497,184 +805,59 @@ class DoubleColorBallAnalyzer:
             print("无")
     
     def generate_recommendations(self, num_sets=5):
-        """生成推荐号码（基于智能分析的动态推荐）"""
-        print(f"\n=== 生成 {num_sets} 组推荐号码 ===")
-        
+        """使用 LSTM + 时间衰减频率 + ARIMA 约束 + Monte Carlo 的低熵推荐"""
+        print(f"\n=== 生成 {num_sets} 组机器学习增强推荐 ===")
         if not self.lottery_data:
             print("无数据，无法生成推荐")
             return []
+
+        # 1) fused probabilities (ML + time-decayed marginals)
+        p_red, p_blue = self.predict_next_probabilities(blend_alpha="auto", decay_half_life=60)
         
-        # 统计频率
-        red_counter = Counter()
-        blue_counter = Counter()
-        
-        for record in self.lottery_data:
-            for red in record['red_balls']:
-                red_counter[red] += 1
-            blue_counter[record['blue_ball']] += 1
-        
-        # 确保所有红球都有记录（即使频率为0）
-        for i in range(1, 34):
-            if i not in red_counter:
-                red_counter[i] = 0
-                
-        # 确保所有蓝球都有记录
-        for i in range(1, 17):
-            if i not in blue_counter:
-                blue_counter[i] = 0
-        
-        # 获取红球频率排序
-        red_freq_sorted = sorted(red_counter.items(), key=lambda x: x[1], reverse=True)
-        blue_freq_sorted = sorted(blue_counter.items(), key=lambda x: x[1], reverse=True)
-        
-        # 分层分组：高频、中频、低频
-        total_reds = len(red_freq_sorted)
-        high_cutoff = max(6, total_reds // 3)  # 至少6个高频球
-        mid_cutoff = max(12, 2 * total_reds // 3)  # 至少12个中频球
-        
-        high_freq_reds = [num for num, _ in red_freq_sorted[:high_cutoff]]
-        mid_freq_reds = [num for num, _ in red_freq_sorted[high_cutoff:mid_cutoff]]
-        low_freq_reds = [num for num, _ in red_freq_sorted[mid_cutoff:]]
-        
-        # 获取高频蓝球
-        high_freq_blues = [num for num, _ in blue_freq_sorted[:8]]
-        
-        print(f"高频红球({len(high_freq_reds)}个): {sorted(high_freq_reds)}")
-        print(f"中频红球({len(mid_freq_reds)}个): {sorted(mid_freq_reds)}")
-        print(f"低频红球({len(low_freq_reds)}个): {sorted(low_freq_reds)}")
-        print(f"高频蓝球: {sorted(high_freq_blues)}")
-        
+        # 2) ARIMA sum forecast -> range constraint
+        mu, low, high = self._arima_sum_forecast(horizon=1)
+        sum_low = max(60, int(low) - 5)
+        sum_high = min(180, int(high) + 5)
+        print(f"ARIMA 预测和值区间: 目标≈{mu:.1f}, 允许范围 [{sum_low}, {sum_high}]")
+
+        # 3) Monte Carlo candidates with entropy penalty
+        raw_candidates = self._monte_carlo_candidates(p_red, p_blue, n=2500, sum_mu=mu, sum_low=sum_low, sum_high=sum_high)
+        if not raw_candidates:
+            print("候选为空，回退到无和值约束的采样。")
+            raw_candidates = self._monte_carlo_candidates(p_red, p_blue, n=2500)
+
+        # 4) take top-K unique
         recommendations = []
-        
-        # 定义多种智能选号策略
-        strategies = [
-            {
-                'name': '高频主导',
-                'high': 4, 'mid': 2, 'low': 0,
-                'blue_rank': 0,
-                'description': '基于最高频号码的稳定组合'
-            },
-            {
-                'name': '均衡分布', 
-                'high': 3, 'mid': 2, 'low': 1,
-                'blue_rank': 1,
-                'description': '高中低频均衡的平衡组合'
-            },
-            {
-                'name': '中频优先',
-                'high': 2, 'mid': 3, 'low': 1, 
-                'blue_rank': 2,
-                'description': '中频主导的稳健组合'
-            },
-            {
-                'name': '冷热结合',
-                'high': 3, 'mid': 1, 'low': 2,
-                'blue_rank': 3,
-                'description': '热号与冷号结合的对冲组合'
-            },
-            {
-                'name': '超高频',
-                'high': 5, 'mid': 1, 'low': 0,
-                'blue_rank': 0,
-                'description': '超高频号码的激进组合'
-            },
-            {
-                'name': '低频反选',
-                'high': 1, 'mid': 2, 'low': 3,
-                'blue_rank': 4,
-                'description': '低频号码的反向思维组合'
-            },
-            {
-                'name': '随机均衡',
-                'high': 2, 'mid': 2, 'low': 2,
-                'blue_rank': 2,
-                'description': '各频段随机均衡组合'
-            },
-            {
-                'name': '奇偶优化',
-                'high': 3, 'mid': 2, 'low': 1,
-                'blue_rank': 1,
-                'description': '考虑奇偶平衡的优化组合'
-            }
-        ]
-        
-        random.seed(42)  # 固定种子，确保结果可重现
-        
-        for i, strategy in enumerate(strategies[:num_sets]):
-            selected_reds = []
-            
-            # 从各频段选择号码
-            pools = [
-                (high_freq_reds, strategy['high']),
-                (mid_freq_reds, strategy['mid']),
-                (low_freq_reds, strategy['low'])
-            ]
-            
-            for pool, count in pools:
-                if count > 0 and pool:
-                    # 确保不超出池子大小
-                    actual_count = min(count, len(pool))
-                    # 从池子中随机选择（但基于策略偏好）
-                    if len(pool) >= actual_count:
-                        if strategy['name'] == '奇偶优化':
-                            # 特殊处理：优先保证奇偶平衡
-                            selected_from_pool = self._select_with_odd_even_balance(pool, actual_count, selected_reds)
-                        else:
-                            selected_from_pool = random.sample(pool, actual_count)
-                        selected_reds.extend(selected_from_pool)
-            
-            # 确保有6个红球
-            while len(selected_reds) < 6:
-                all_available = set(high_freq_reds + mid_freq_reds + low_freq_reds) - set(selected_reds)
-                if all_available:
-                    selected_reds.append(random.choice(list(all_available)))
-                else:
-                    # 如果所有球都用完了，从1-33中补充
-                    remaining = set(range(1, 34)) - set(selected_reds)
-                    if remaining:
-                        selected_reds.append(random.choice(list(remaining)))
-                    else:
-                        break
-            
-            # 只保留前6个
-            selected_reds = sorted(selected_reds[:6])
-            
-            # 选择蓝球
-            blue_rank = strategy['blue_rank']
-            if blue_rank < len(high_freq_blues):
-                selected_blue = high_freq_blues[blue_rank]
-            else:
-                selected_blue = high_freq_blues[0] if high_freq_blues else 1
-            
-            # 计算组合特征
-            odd_count = sum(1 for x in selected_reds if x % 2 == 1)
+        used_red_sets = set()
+        for reds, blue, score, H in raw_candidates:
+            key = tuple(reds)
+            if key in used_red_sets:
+                continue
+            odd_count = sum(1 for x in reds if x % 2)
             even_count = 6 - odd_count
-            total_sum = sum(selected_reds)
-            span = max(selected_reds) - min(selected_reds)
-            
-            # 计算频率得分
-            red_total_freq = sum(red_counter.get(red, 0) for red in selected_reds)
-            blue_freq = blue_counter.get(selected_blue, 0)
-            
+            span = max(reds) - min(reds)
+            total_sum = sum(reds)
+            conf = float(np.mean([p_red[r-1] for r in reds]) * p_blue[blue-1])
             recommendations.append({
-                'red_balls': selected_reds,
-                'blue_ball': selected_blue,
-                'description': strategy['description'],
-                'strategy': strategy['name'],
+                'red_balls': reds,
+                'blue_ball': blue,
+                'description': 'LSTM+ARIMA+MonteCarlo 低熵组合',
+                'strategy': 'ML低熵',
                 'odd_even': f"{odd_count}奇{even_count}偶",
                 'sum': total_sum,
                 'span': span,
-                'red_freq_sum': red_total_freq,
-                'blue_freq': blue_freq
+                'entropy_bits': round(H, 4),
+                'confidence': round(conf, 6),
             })
-        
-        print("\n基于智能策略的推荐号码：")
+            used_red_sets.add(key)
+            if len(recommendations) >= num_sets:
+                break
+
+        print("\n机器学习增强推荐：")
         for i, rec in enumerate(recommendations, 1):
             red_str = " ".join([f"{x:2d}" for x in rec['red_balls']])
-            print(f"推荐 {i}: {red_str} + {rec['blue_ball']:2d}")
-            print(f"       策略: {rec['strategy']} | {rec['odd_even']} | 和值:{rec['sum']} | 跨度:{rec['span']}")
-            print(f"       说明: {rec['description']}")
-        
+            print(f"推荐 {i}: {red_str} + {rec['blue_ball']:2d} | 熵:{rec['entropy_bits']:.3f}bits | 置信度:{rec['confidence']:.6f} | 和值:{rec['sum']} | 跨度:{rec['span']} | {rec['odd_even']}")
+
         return recommendations
     
     def _select_with_odd_even_balance(self, pool, count, existing_reds):
@@ -922,9 +1105,13 @@ class DoubleColorBallAnalyzer:
         
         for i, rec in enumerate(recommendations, 1):
             red_str = " ".join([f"{x:02d}" for x in rec['red_balls']])
-            report_content += f"**推荐组合 {i}** ({rec['strategy']}): {red_str} + **{rec['blue_ball']:02d}**\n"
+            report_content += f"**推荐组合 {i}** ({rec.get('strategy','ML低熵')}): {red_str} + **{rec['blue_ball']:02d}**\n"
             report_content += f"- 特征: {rec['odd_even']} | 和值:{rec['sum']} | 跨度:{rec['span']}\n"
-            report_content += f"- 说明: {rec['description']}\n\n"
+            if 'entropy_bits' in rec:
+                report_content += f"- 信息熵: {rec['entropy_bits']} bits\n"
+            if 'confidence' in rec:
+                report_content += f"- 置信度(相对): {rec['confidence']}\n"
+            report_content += f"- 说明: {rec.get('description','LSTM+ARIMA+MonteCarlo 低熵组合')}\n\n"
         
         # 添加使用说明和提醒
         report_content += f"""---
@@ -1347,46 +1534,49 @@ class DoubleColorBallAnalyzer:
         try:
             # 生成推荐号码
             recommendations = self.generate_recommendations(num_sets=5)
-            
-            # 读取现有README内容
-            with open(readme_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-            
+
+            # 读取现有README内容或创建最小骨架
+            if not os.path.exists(readme_path):
+                print(f"ℹ️  README 不存在：将创建最小 README 并插入推荐区。")
+                content = "# 🎯 双色球开奖数据分析系统\n\n> 本仓库为历史数据分析与可视化，仅供学习研究使用。\n\n"
+            else:
+                with open(readme_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+
             # 使用传入的时间戳或生成新的时间戳 UTC+8
             if timestamp:
                 current_time = timestamp
             else:
                 current_time = (datetime.now() + timedelta(hours=8)).strftime('%Y年%m月%d日 %H:%M:%S')
-            
-            # 构建推荐号码内容
+
+            # 构建推荐号码内容（保留你原来的模板，但不会因文件缺失失败）
             recommendations_content = f"""## 🎯 今日推荐号码
 
-**⚠️ 以下推荐号码基于历史统计分析，仅供参考，不保证中奖！**
+        **⚠️ 以下推荐号码基于历史统计分析，仅供参考，不保证中奖！**
 
-### 双色球推荐 (更新时间: {current_time})
+        ### 双色球推荐 (更新时间: {current_time})
 
-"""
-            
+        """
             for i, rec in enumerate(recommendations, 1):
                 red_str = " ".join([f"{x:02d}" for x in rec['red_balls']])
                 recommendations_content += f"**推荐 {i}** ({rec['strategy']}): `{red_str}` + `{rec['blue_ball']:02d}`  \n"
                 recommendations_content += f"*{rec['description']} | {rec['odd_even']} | 和值:{rec['sum']} | 跨度:{rec['span']}*\n\n"
-            
+
             # 查找第二个H2标题的位置（免责声明后）
             lines = content.split('\n')
             h2_count = 0
             insert_index = -1
-            
+
             for i, line in enumerate(lines):
                 if line.startswith('## '):
                     h2_count += 1
                     if h2_count == 2:  # 第二个H2标题
                         insert_index = i
                         break
-            
+
             if insert_index == -1:
                 print("未找到合适的插入位置，将在文件末尾添加")
-                new_content = content + "\n\n" + recommendations_content
+                new_content = content.rstrip() + "\n\n" + recommendations_content
             else:
                 # 检查是否已存在推荐号码部分
                 existing_rec_index = -1
@@ -1394,7 +1584,7 @@ class DoubleColorBallAnalyzer:
                     if "今日推荐号码" in lines[i]:
                         existing_rec_index = i
                         break
-                
+
                 if existing_rec_index != -1:
                     # 找到推荐号码部分的结束位置
                     end_index = existing_rec_index
@@ -1404,21 +1594,18 @@ class DoubleColorBallAnalyzer:
                             break
                     else:
                         end_index = len(lines)
-                    
-                    # 替换现有推荐号码部分
+
                     new_lines = lines[:existing_rec_index] + recommendations_content.strip().split('\n') + lines[end_index:]
                 else:
-                    # 在第二个H2标题前插入推荐号码
                     new_lines = lines[:insert_index] + recommendations_content.strip().split('\n') + [''] + lines[insert_index:]
-                
+
                 new_content = '\n'.join(new_lines)
-            
-            # 写回文件
+
             with open(readme_path, 'w', encoding='utf-8') as f:
                 f.write(new_content)
-            
+
             print(f"README.md中的双色球推荐号码已更新")
-            
+
         except Exception as e:
             print(f"更新README推荐号码失败: {e}")
 
@@ -1426,6 +1613,10 @@ def main():
     """主函数"""
     # 显示免责声明
     print("=" * 80)
+    print(f"🧰 Runtime -> Python: {sys.version.split()[0]} | Torch: {getattr(torch, '__version__', 'N/A')} | CUDA: {torch.cuda.is_available() if hasattr(torch, 'cuda') else False}")
+    print(f"📄 Running script: {__file__}")
+    if sys.version_info < (3, 11):
+        print("⚠️ 建议使用 Python 3.11+ 以避免 macOS LibreSSL/urllib3 警告，并获得更好的依赖兼容性。")
     print("🎯 双色球数据分析系统")
     print("=" * 80)
     print("⚠️  重要免责声明：")
@@ -1457,9 +1648,16 @@ def main():
     red_counter, blue_counter = analyzer.analyze_frequency()
     analyzer.analyze_patterns()
     analyzer.analyze_trends()
-    
+    # 训练机器学习模型（LSTM）
+    try:
+        analyzer.train_ml_model(seq_len=10, epochs=5, lr=1e-3, hidden_size=64, dropout=0.2)
+    except Exception as e:
+        print(f"⚠️  模型训练失败: {e}，将使用时间衰减频率作为备选。")
+        analyzer.trained = False
+    print(f"🧪 模型训练状态: {'已训练(使用LSTM融合)' if analyzer.trained else '未训练(使用时间衰减频率)'}")
+    analyzer.generate_recommendations(num_sets=8)
     # 生成推荐号码
-    recommendations = analyzer.generate_recommendations(num_sets=5)
+    # recommendations = analyzer.generate_recommendations(num_sets=5)
     
     # 生成可视化图表
     try:
