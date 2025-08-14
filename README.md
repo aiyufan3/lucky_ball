@@ -1,339 +1,170 @@
-# 🎯 Double Chromosphere Lottery Data Analysis System
-
-# 🎯 双色球开奖数据分析系统
-
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+# Lottery Data Analysis System | 彩票数据分析系统
 
 ---
 
-## ⚠️ Important Disclaimer
+## Project Introduction | 项目介绍
 
-## ⚠️ 重要免责声明
+Welcome to the **Lottery Data Analysis System**, a comprehensive tool designed for analyzing and predicting lottery draws with a focus on **Double Chromosphere (双色球)** and **Happy 8 (快乐8)** games.  
+欢迎使用**彩票数据分析系统**，这是一个专注于**双色球**和**快乐8**彩票的综合分析与预测工具。
 
-**This project is for technical learning and data analysis research purposes only.**  
-**本项目仅用于技术学习和数据分析研究目的。**
-
-- 🎲 Lottery results are completely random; historical data cannot predict future outcomes.  
-  彩票开奖结果完全随机，历史数据无法预测未来结果。
-- 📊 The analysis is for reference only and does not constitute any betting advice.  
-  本分析结果仅供参考，不构成任何投注建议。
-- 💰 Please gamble responsibly and within your means. Minors under 18 are prohibited from purchasing lottery tickets.  
-  请理性购彩，量力而行，未满 18 周岁禁止购买彩票。
-- ⚖️ The developer is not responsible for any losses resulting from using this script.  
-  开发者不承担因使用本脚本产生的任何损失。
-- 🤖 **The addition of machine learning models does not guarantee prediction accuracy.**  
-  机器学习模型的引入并不保证预测准确率。
-
+This system integrates advanced statistical analysis, machine learning models (LSTM, ARIMA), Monte Carlo simulations, and entropy minimization techniques to provide intelligent number recommendations and detailed insights.  
+本系统结合先进的统计分析、机器学习模型（LSTM、ARIMA）、蒙特卡洛模拟及熵最小化技术，提供智能选号推荐及详细数据洞察。
 
 ---
 
-## 🚀 Features
+## Today’s Recommendations | 今日推荐号码
 
-## 🚀 功能特性
+**Recommendations are based on historical data analysis and do not guarantee winnings. Please play responsibly!**  
+**以下推荐号码基于历史数据分析，仅供参考，不保证中奖！请理性购彩！**
 
-- 📈 **Automatic Data Fetching**: Daily fetch of the latest lottery draw data  
-  **自动数据抓取**：每日自动抓取最新双色球开奖数据
-- 📊 **Statistical Analysis**: Multi-dimensional analysis of number frequency, odd/even distribution, sum, and span  
-  **统计分析**：号码频率、奇偶分布、和值跨度等多维度分析
-- 📉 **Trend Analysis**: Hot/cold number analysis and trend detection  
-  **趋势分析**：冷热号码分析和走势识别
-- 🎯 **Intelligent Recommendation**: Number recommendation algorithm based on statistics  
-  **智能推荐**：基于统计学的号码推荐算法
-- 📱 **Visualization**: Generate intuitive frequency analysis charts  
-  **可视化图表**：生成直观的频率分析图表
-- 📋 **Analysis Report**: Automatically generate detailed Markdown analysis reports  
-  **分析报告**：自动生成详细的 Markdown 格式分析报告
-- 🤖 **Automated Deployment**: GitHub Actions for automatic runs and data updates  
-  **自动化部署**：GitHub Actions 自动运行和数据更新
-- 🧠 **LSTM-based Machine Learning Model**: Sequence-to-sequence prediction blending historical frequency analysis with LSTM deep learning  
-  **基于 LSTM 的机器学习模型**：结合历史频率分析与 LSTM 深度学习的序列预测
-- 🟢 **Entropy Minimization**: Optimize number selection by minimizing entropy in historical draws  
-  **熵最小化**：通过最小化历史开奖熵优化选号
-- 🎲 **Monte Carlo Simulation**: Simulate large numbers of draws to evaluate strategies  
-  **蒙特卡洛模拟**：大量开奖模拟以评估策略
-- 📈 **ARIMA Trend Forecasting**: Use ARIMA models for time series trend prediction  
-  **ARIMA 趋势预测**：利用 ARIMA 模型进行时间序列趋势预测
-- 🧪 **Rolling Backtesting**: Evaluate strategies and ML models with rolling backtest, Hit@k, and blue-ball hit rate metrics  
-  **滚动回测**：用回测、Hit@k 和蓝球命中率等指标评估策略与模型
-- 🔒 **Strict ML Training Mode**: Enable strict mode for ML model training during backtesting  
-  **严格模式**：回测时可启用机器学习模型的严格训练模式
+| Game | Recommendation # | Red Balls / Numbers | Blue Ball / Extra | Notes / Features                                  |
+|-------|------------------|---------------------|-------------------|--------------------------------------------------|
+| **Double Chromosphere (双色球)** | 1                | 02 06 14 16 31 33   | 06                | LSTM+ARIMA+MonteCarlo low entropy | 2 odd, 4 even | Sum:102 | Span:31 |
+| **Double Chromosphere (双色球)** | 2                | 02 06 10 14 20 23   | 05                | LSTM+ARIMA+MonteCarlo low entropy | 1 odd, 5 even | Sum:75  | Span:21 |
+| **Double Chromosphere (双色球)** | 3                | 06 10 14 15 28 31   | 12                | LSTM+ARIMA+MonteCarlo low entropy | 2 odd, 4 even | Sum:104 | Span:25 |
+| **Double Chromosphere (双色球)** | 4                | 02 06 08 14 15 26   | 06                | LSTM+ARIMA+MonteCarlo low entropy | 1 odd, 5 even | Sum:71  | Span:24 |
+| **Double Chromosphere (双色球)** | 5                | 02 06 10 13 22 31   | 11                | LSTM+ARIMA+MonteCarlo low entropy | 2 odd, 4 even | Sum:84  | Span:29 |
+| **Happy 8 (快乐8)**              | 1                | 03 07 12 18 22 27 31 35 | -                 | Monte Carlo simulation with entropy minimization |
+| **Happy 8 (快乐8)**              | 2                | 01 05 09 14 20 25 29 33 | -                 | Hot/cold number trend analysis                     |
+| **Happy 8 (快乐8)**              | 3                | 04 08 13 17 21 26 30 34 | -                 | LSTM-based prediction with ARIMA trend forecasting |
 
 ---
 
-## 📁 Project Structure
+## Features | 功能特性
 
-## 📁 项目结构
-
-```
-lucky_ball/
-├── lottery_analyzer.py          # Main analysis script | 主分析脚本
-├── requirements.txt             # Python dependencies | Python依赖包
-├── lottery_data.json            # Draw data file (auto-generated) | 开奖数据文件 (自动生成)
-├── analysis_report.md           # Detailed analysis report (auto-generated) | 详细分析报告 (自动生成)
-├── lottery_frequency_analysis.png # Analysis chart (auto-generated) | 分析图表 (自动生成)
-├── backtest.py                  # Backtesting and ML evaluation script | 回测与机器学习评估脚本
-├── .github/workflows/
-│   └── update-lottery-data.yml  # GitHub Actions workflow | GitHub Actions工作流
-├── README.md                    # Project documentation | 项目说明
-├── LICENSE                      # Open source license | 开源协议
-└── .gitignore                   # Git ignore file | Git忽略文件
-```
+| English Description                                    | 中文描述                                         |
+|--------------------------------------------------------|------------------------------------------------|
+| Automatic daily data fetching                           | 自动每日抓取最新开奖数据                         |
+| Multi-dimensional statistical analysis                 | 多维度统计分析（频率、奇偶、和值、跨度等）        |
+| Trend and hot/cold number analysis                      | 趋势分析及冷热号码识别                          |
+| Intelligent recommendation algorithms                   | 智能号码推荐算法                                |
+| Visualization charts for frequency and trends          | 频率与趋势可视化图表                            |
+| Auto-generated detailed Markdown analysis reports       | 自动生成详细的 Markdown 分析报告                  |
+| Machine learning models: LSTM, ARIMA, entropy minimization | 机器学习模型：LSTM、ARIMA、熵最小化              |
+| Monte Carlo simulation for strategy evaluation          | 蒙特卡洛模拟策略评估                            |
+| Rolling backtesting with Hit@k and blue-ball hit rate   | 滚动回测，输出 Hit@k 和蓝球命中率指标            |
+| Strict ML training mode for robust evaluation           | 严格模式训练，确保模型评估的鲁棒性                |
+| Support for both Double Chromosphere and Happy 8 games  | 同时支持双色球与快乐8彩票分析与推荐                |
+| Scheduled automation with GitHub Actions                 | GitHub Actions 定时自动化运行                    |
 
 ---
 
-## 🛠️ Installation and Usage
+## Installation & Usage | 安装与使用
 
-## 🛠️ 安装使用
+### Local Setup | 本地安装
 
-### Local Run
-
-### 本地运行
-
-1. **Clone the repository**  
-   **克隆仓库**
+1. Clone the repository | 克隆仓库  
    ```bash
    git clone https://github.com/your-username/lucky_ball.git
    cd lucky_ball
    ```
-2. **Install dependencies**  
-   **安装依赖**
+2. Install dependencies | 安装依赖  
    ```bash
    pip install -r requirements.txt
    ```
-3. **Run analysis**  
-   **运行分析**
+3. Run analysis | 运行分析  
    ```bash
    python lottery_analyzer.py
    ```
 
-### Backtesting and ML Evaluation
+### Backtesting & ML Evaluation | 回测与机器学习评估
 
-### 回测与机器学习评估
-
-Run rolling backtest and compare ML models with baseline:  
-运行滚动回测，比较机器学习模型与基线方法：
+Run rolling backtest to evaluate ML and baseline models:  
+运行滚动回测，评估机器学习模型与基线模型：
 
 ```bash
 python backtest.py --model lstm --window 50 --recommend 5 --strict
 ```
 
-- `--model lstm` Use LSTM-based ML model  
-  `--model lstm` 使用 LSTM 机器学习模型
-- `--window 50` Rolling window size  
-  `--window 50` 滚动窗口大小
-- `--recommend 5` Number of recommendations per period  
-  `--recommend 5` 每期推荐组数
-- `--strict` Enable strict ML training mode (train only on past data in each window)  
-  `--strict` 启用严格模式（每个窗口仅用历史数据训练）
+- `--model lstm`: Use LSTM-based machine learning model | 使用基于 LSTM 的机器学习模型  
+- `--window 50`: Rolling window size | 滚动窗口大小  
+- `--recommend 5`: Number of recommendation sets per period | 每期推荐组数  
+- `--strict`: Enable strict training mode (train only on past data) | 启用严格训练模式（仅用历史数据训练）
 
-Results include Hit@k and blue-ball hit rate for both ML and Baseline strategies.  
-结果将输出 ML 与基线策略的 Hit@k 和蓝球命中率等指标。
-
-### GitHub Actions Automation
-
-### GitHub Actions 自动化
-
-This project is configured to run automatically via GitHub Actions:  
-本项目已配置 GitHub Actions 自动运行：
-
-- 🕐 **Scheduled Runs**: Fetch latest data daily at 23:00 (UTC+8)  
-  **定时运行**：每天晚上 23:00(UTC+8)自动抓取最新数据
-- 🖱️ **Manual Trigger**: Trigger runs manually on the Actions page  
-  **手动触发**：可在 Actions 页面手动触发运行
-- 📝 **Auto Commit**: Automatically commit new data to the repository  
-  **自动提交**：有新数据时自动提交到仓库
-- 🏷️ **Release Creation**: Create a release with data files on daily updates  
-  **创建发布**：每日数据更新时自动创建带数据文件的 release
+Results include Hit@k and blue-ball hit rate for both ML and baseline strategies.  
+结果包含机器学习和基线策略的 Hit@k 及蓝球命中率指标。
 
 ---
 
-## 📊 Analysis Capabilities
+## Automation with GitHub Actions | GitHub Actions 自动化
 
-## 📊 分析功能
+This project supports automated data fetching, analysis, and report generation via GitHub Actions:  
+本项目通过 GitHub Actions 实现自动数据抓取、分析及报告生成：
 
-### 1. Number Frequency Analysis
+| Automation Type      | Description                                     | 说明                                               |
+|----------------------|-------------------------------------------------|----------------------------------------------------|
+| Scheduled Runs    | Daily at 23:00 (UTC+8) fetch latest data       | 每天晚上23:00（UTC+8）自动抓取最新开奖数据          |
+| Manual Trigger    | Trigger runs manually via GitHub Actions page  | 可在 GitHub Actions 页面手动触发运行                |
+| Auto Commit       | Automatically commit updated data files         | 自动提交更新后的数据文件                             |
+| Release Creation | Create releases with data on daily updates      | 每日数据更新时自动创建包含数据文件的 Release         |
 
-### 1. 号码频率分析
-
-- Red and blue ball frequency statistics  
-  红球和蓝球的出现频率统计
-- Hot and cold number identification  
-  热号和冷号识别
-- Visualization of frequency distribution  
-  可视化频率分布图
-
-### 2. Pattern Analysis
-
-### 2. 号码规律分析
-
-- Odd/even distribution  
-  奇偶分布规律
-- Sum statistics  
-  和值分布统计
-- Span analysis  
-  跨度分布分析
-
-### 3. Trend Analysis
-
-### 3. 走势分析
-
-- Recent period trends  
-  最近期数走势
-- Hot/cold number changes  
-  冷热号码变化
-- Number omission statistics  
-  号码遗漏统计
-
-### 4. Intelligent Recommendation
-
-### 4. 智能推荐
-
-- Probability-based recommendation  
-  基于概率统计的号码推荐
-- Multiple set generation  
-  多组号码生成
-- Weight algorithm optimization  
-  权重算法优化
-
-### 5. Analysis Report
-
-### 5. 分析报告
-
-- Auto-generate Markdown report  
-  自动生成 Markdown 格式报告
-- Complete statistical analysis data  
-  包含完整的统计分析数据
-- Detailed instructions and risk warnings  
-  提供详细的使用说明和风险提醒
-- Daily automatic update  
-  每日自动更新
-
-### 6. Machine Learning & Backtest
-
-### 6. 机器学习与回测
-
-- LSTM-based prediction blending historical frequency  
-  基于 LSTM 的历史频率混合预测
-- Entropy minimization and ARIMA trend forecasting  
-  熵最小化与 ARIMA 趋势预测
-- Monte Carlo simulation for strategy evaluation  
-  蒙特卡洛模拟评估策略
-- Rolling backtest with Hit@k and blue-ball hit rate metrics  
-  滚动回测，输出 Hit@k 和蓝球命中率等指标
-- Strict ML training mode for robust evaluation  
-  严格模式下的机器学习模型评估
+Modify scheduling by editing `.github/workflows/update-lottery-data.yml`.  
+可通过编辑 `.github/workflows/update-lottery-data.yml` 修改定时任务。
 
 ---
 
-## 🔧 Configuration
+## Data Source | 数据来源
 
-## 🔧 配置说明
-
-### Modify Fetch Parameters
-
-### 修改抓取参数
-
-In `lottery_analyzer.py`, you can adjust the following parameters:  
-在 `lottery_analyzer.py` 中可调整如下参数：
-
-```python
-# Change request headers
-self.headers = {
-    'User-Agent': '...'  # Update as needed | 可根据需要更新
-}
-# Change number of recommendation sets
-recommendations = analyzer.generate_recommendations(num_sets=5)
-```
-
-### Modify GitHub Actions Schedule
-
-### 修改 GitHub Actions 运行时间
-
-Edit the cron expression in `.github/workflows/update-lottery-data.yml`:  
-在 `.github/workflows/update-lottery-data.yml` 中修改 cron 表达式：
-
-```yaml
-schedule:
-  # 23:00 (UTC+8)
-  - cron: "0 15 * * *"
-```
-
----
-
-## 📈 Data Source
-
-## 📈 数据来源
-
-Data is sourced from the official China Welfare Lottery API:  
+Official China Welfare Lottery API powers the data:  
 数据来源于中国福利彩票官方网站 API：
 
-- **API URL**: `https://www.cwl.gov.cn/cwl_admin/front/cwlkj/search/kjxx/findDrawNotice`
-- **Data format**: JSON  
-  **数据格式**: JSON
-- **Update frequency**: After draws on Tuesday, Thursday, and Sunday  
-  **更新频率**: 每周二、四、日开奖后更新
+- **API URL**: `https://www.cwl.gov.cn/cwl_admin/front/cwlkj/search/kjxx/findDrawNotice`  
+- **Format**: JSON  
+- **Update Frequency**: After draws on Tuesday, Thursday, and Sunday  
 
 ---
 
-## 🤝 Contribution Guide
+## Contribution | 贡献指南
 
-## 🤝 贡献指南
+Contributions are warmly welcomed! Please follow the standard GitHub workflow:  
+欢迎贡献！请遵循标准 GitHub 工作流程：
 
-Contributions are welcome via Issues and Pull Requests!  
-欢迎提交 Issue 和 Pull Request！
-
-1. Fork the repository  
-   Fork 本仓库
-2. Create a feature branch (`git checkout -b feature/AmazingFeature`)  
-   创建特性分支 (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)  
-   提交更改 (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)  
-   推送到分支 (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request  
-   打开 Pull Request
+1. Fork the repository | Fork 仓库  
+2. Create a feature branch (`git checkout -b feature/AmazingFeature`) | 创建特性分支  
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`) | 提交更改  
+4. Push to the branch (`git push origin feature/AmazingFeature`) | 推送分支  
+5. Open a Pull Request | 创建 Pull Request  
 
 ---
 
-## 📄 License
-
-## 📄 开源协议
+## License & Legal Notice | 许可与法律声明
 
 This project is licensed under the [MIT License](LICENSE).  
 本项目基于 [MIT License](LICENSE) 开源协议。
 
 ---
 
-## 🙏 Acknowledgements
+### Important Disclaimer | 重要免责声明
 
-## 🙏 致谢
-
-- **Original Author**: [snjyor](https://github.com/snjyor) 
-   Original version available at [https://github.com/snjyor/lucky_ball](https://github.com/snjyor/lucky_ball)  
-   原作者：[snjyor](https://github.com/snjyor) 
-   原始版本可在 [https://github.com/snjyor/lucky_ball](https://github.com/snjyor/lucky_ball) 获取
-- Thanks to the official China Welfare Lottery for open data  
-  感谢中国福利彩票官方提供的开放数据
-- Thanks to all open source contributors and libraries  
-  感谢所有开源贡献者的工具和库
-
----
-
-## ⚖️ Legal Statement
-
-## ⚖️ 法律声明
-
-- This project strictly complies with relevant laws and regulations  
-  本项目严格遵守相关法律法规
-- For technical research and learning only  
-  仅用于技术研究和学习交流
-- No encouragement of any form of gambling  
-  不鼓励任何形式的赌博行为
-- All consequences of illegal use are at your own risk  
-  如有违法违规使用，后果自负
+- This project is for **technical learning and data analysis research purposes only**.  
+  本项目仅用于技术学习和数据分析研究目的。  
+- Lottery results are completely random; historical data cannot predict future outcomes.  
+  彩票开奖结果完全随机，历史数据无法预测未来结果。  
+- Analysis is for reference only and does not constitute betting advice.  
+  本分析结果仅供参考，不构成任何投注建议。  
+- Please gamble responsibly and within your means; minors under 18 are prohibited from purchasing lottery tickets.  
+  请理性购彩，量力而行，未满18周岁禁止购买彩票。  
+- The developer is not responsible for any losses arising from use of this software.  
+  开发者不承担因使用本软件产生的任何损失。  
+- Machine learning models do not guarantee prediction accuracy.  
+  机器学习模型的引入并不保证预测准确率。  
+- This project complies strictly with all relevant laws and regulations and does not encourage gambling.  
+  本项目严格遵守相关法律法规，不鼓励任何形式的赌博行为。  
+- Any illegal use is at your own risk.  
+  如有违法违规使用，后果自负。  
 
 ---
 
-**Remember: Lottery is risky, gamble with caution! Play responsibly, live happily!** 🍀  
-**记住：彩票有风险，投注需谨慎！理性购彩，快乐生活！** 🍀
+## Acknowledgements | 致谢
+
+- Original author: [snjyor](https://github.com/snjyor)  
+  原作者：[snjyor](https://github.com/snjyor)  
+- Official China Welfare Lottery for open data support  
+  感谢中国福利彩票官方提供的开放数据  
+- All open source contributors and libraries used in this project  
+  感谢所有开源贡献者及所使用的开源库  
+
+---
+
+**Remember: Lottery is risky, gamble with caution! Play responsibly, live happily!**  
+**记住：彩票有风险，投注需谨慎！理性购彩，快乐生活！**
