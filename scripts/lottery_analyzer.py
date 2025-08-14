@@ -39,6 +39,21 @@ from statsmodels.tsa.arima.model import ARIMA
 from scipy.stats import entropy as scipy_entropy
 warnings.filterwarnings('ignore')
 
+# ===== Calibration defaults (tuned by backtest) =====
+# 三向融合先验: p = λ1 * p_short + λ2 * p_weekday + (1-λ1-λ2) * p_global
+FUSION_L1_SHORT = 0.30     # 近窗权重
+FUSION_L2_WEEKDAY = 0.20   # 周几条件权重
+SHORT_WINDOW = 30          # 近窗长度(期)
+SHRINK_BETA_WEEKDAY = 40.0 # 周几条件的收缩系数(越大越保守)
+
+# 温度（平滑，越大越平）
+TAU_RED = 1.3
+TAU_BLUE = 1.5
+
+# 稀疏样本下调 Alpha 的阈值
+WEEKDAY_RECENT_WINDOW = 24
+WEEKDAY_MIN_COUNT = 8
+
 # 设置中文字体支持
 plt.rcParams['font.sans-serif'] = ['SimHei', 'Arial Unicode MS', 'DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False
@@ -113,7 +128,45 @@ class DoubleColorBallAnalyzer:
         
         self.session.headers.update(headers)
         print(f"🔄 更新User-Agent: {user_agent[:50]}...")
-        
+
+    def _sorted_data(self, descending=True):
+        """Return lottery_data sorted by (date, period)."""
+        keyfn = lambda r: (r.get('date', ''), r.get('period', ''))
+        return sorted(self.lottery_data, key=keyfn, reverse=descending)
+
+    # ===== Weekday helpers =====
+    def _weekday_from_date(self, date_str):
+        """Return weekday index for 'YYYY-MM-DD' (Mon=0..Sun=6)."""
+        try:
+            return datetime.strptime(date_str, "%Y-%m-%d").weekday()
+        except Exception:
+            return None
+
+    def _next_draw_weekday(self, now=None):
+        """Return next draw's weekday index based on Tue/Thu/Sun schedule (Mon=0..Sun=6)."""
+        draw_days = {1, 3, 6}  # Tue, Thu, Sun
+        if now is None:
+            # use UTC+8 for CN lottery
+            now = datetime.utcnow() + timedelta(hours=8)
+        wd = now.weekday()
+        for offset in range(0, 8):  # within next week
+            cand = (wd + offset) % 7
+            if cand in draw_days and offset > 0:  # the *next* draw day from now
+                return cand
+        # fallback
+        return 1  # Tue
+
+    def _weekday_features(self, wd):
+        """Cyclical + one-hot(Tue/Thu/Sun): returns [sin, cos, is_tue, is_thu, is_sun]."""
+        if wd is None:
+            return np.zeros(5, dtype=np.float32)
+        angle = 2.0 * np.pi * (wd / 7.0)
+        sinv = np.sin(angle); cosv = np.cos(angle)
+        is_tue = 1.0 if wd == 1 else 0.0
+        is_thu = 1.0 if wd == 3 else 0.0
+        is_sun = 1.0 if wd == 6 else 0.0
+        return np.array([sinv, cosv, is_tue, is_thu, is_sun], dtype=np.float32)
+
     def get_max_pages(self):
         """获取真实的最大页码，增强错误处理"""
         print("正在获取最大页码...")
@@ -457,12 +510,14 @@ class DoubleColorBallAnalyzer:
             else:
                 return logits, logits
             
-    def _engineered_features(self, reds):
+    def _engineered_features(self, reds, weekday):
         """
         Hand-crafted features from a draw:
         - sum (min 21, max 183) -> min-max normalized
         - span (max-min), max 32 -> normalized to [0,1]
         - odd_ratio, even_ratio
+        - weekday cyclic (sin, cos) + one-hot(Tue/Thu/Sun)
+        Returns a (9,) float32 vector.
         """
         s = sum(reds)
         s_norm = (s - 21.0) / 162.0  # 183-21=162
@@ -470,11 +525,13 @@ class DoubleColorBallAnalyzer:
         span_norm = span / 32.0
         odd = sum(1 for r in reds if r % 2 == 1)
         even = 6 - odd
-        return np.array([s_norm, span_norm, odd / 6.0, even / 6.0], dtype=np.float32)
+        wdf = self._weekday_features(weekday)  # (5,)
+        base = np.array([s_norm, span_norm, odd / 6.0, even / 6.0], dtype=np.float32)
+        return np.concatenate([base, wdf], axis=0)
     
-    def _onehot_multi(self, reds, blue):
+    def _onehot_multi(self, reds, blue, weekday):
         """
-        Convert a draw to multi-hot (33) + one-hot (16) + engineered(4) -> (53,)
+        Convert a draw to multi-hot (33) + one-hot (16) + engineered(9) -> (58,)
         """
         red_vec = np.zeros(33, dtype=np.float32)
         for r in reds:
@@ -483,21 +540,21 @@ class DoubleColorBallAnalyzer:
         blue_vec = np.zeros(16, dtype=np.float32)
         if 1 <= blue <= 16:
             blue_vec[blue-1] = 1.0
-        feats = self._engineered_features(reds)
+        feats = self._engineered_features(reds, weekday)
         return np.concatenate([red_vec, blue_vec, feats], axis=0)
 
     def _build_sequence_dataset(self, seq_len=10):
         """
-        Build X (N, seq_len, 53), y_red (N,33), y_blue (N,)
+        Build X (N, seq_len, 58), y_red (N,33), y_blue (N,)
         Newest-first in memory -> sort to oldest-first for sequences.
         """
         if not self.lottery_data or len(self.lottery_data) <= seq_len:
             return None
         data_sorted = sorted(self.lottery_data, key=lambda r: (r["date"], r["period"]))
-        feats = [self._onehot_multi(r["red_balls"], r["blue_ball"]) for r in data_sorted]
+        feats = [self._onehot_multi(r["red_balls"], r["blue_ball"], self._weekday_from_date(r["date"])) for r in data_sorted]
         X, y_red, y_blue = [], [], []
         for i in range(seq_len, len(feats)):
-            X.append(np.stack(feats[i-seq_len:i], axis=0))  # (seq_len,53)
+            X.append(np.stack(feats[i-seq_len:i], axis=0))  # (seq_len,58)
             red_vec = np.zeros(33, dtype=np.float32)
             for rr in data_sorted[i]["red_balls"]:
                 red_vec[rr-1] = 1.0
@@ -521,29 +578,99 @@ class DoubleColorBallAnalyzer:
         lam = np.log(2) / max(1, half_life)
         return np.exp(lam * (idx - n_rows + 1))
 
-    def compute_marginal_probs(self, decay_half_life=60):
-        """Time-decayed marginal probabilities for red(33) and blue(16)."""
+    def compute_marginal_probs(self, decay_half_life=60, cond_weekday=None, shrink_beta=20.0):
+        """
+        Time-decayed marginal probabilities for red(33) and blue(16).
+        Optionally condition on weekday (Mon=0..Sun=6) with shrinkage.
+        """
         if not self.lottery_data:
             return np.ones(33)/33.0, np.ones(16)/16.0
         data_sorted = sorted(self.lottery_data, key=lambda r: (r["date"], r["period"]))
         reds_list = [r["red_balls"] for r in data_sorted]
         blues_list = [r["blue_ball"] for r in data_sorted]
+        wdays = [self._weekday_from_date(r["date"]) for r in data_sorted]
         n = len(reds_list)
         w = self.time_decay_weights(n, half_life=decay_half_life)
-        red_counts = np.zeros(33, dtype=np.float64)
-        blue_counts = np.zeros(16, dtype=np.float64)
+
+        # global counts
+        red_counts_g = np.zeros(33, dtype=np.float64)
+        blue_counts_g = np.zeros(16, dtype=np.float64)
         for balls, wb, weight in zip(reds_list, blues_list, w):
             for b in balls:
-                red_counts[b-1] += weight
-            blue_counts[wb-1] += weight
-        pr = red_counts / red_counts.sum() if red_counts.sum() > 0 else np.ones(33)/33.0
-        pb = blue_counts / blue_counts.sum() if blue_counts.sum() > 0 else np.ones(16)/16.0
+                red_counts_g[b-1] += weight
+            blue_counts_g[wb-1] += weight
+        pr_g = red_counts_g / red_counts_g.sum() if red_counts_g.sum() > 0 else np.ones(33)/33.0
+        pb_g = blue_counts_g / blue_counts_g.sum() if blue_counts_g.sum() > 0 else np.ones(16)/16.0
+
+        if cond_weekday is None:
+            return pr_g.astype(np.float32), pb_g.astype(np.float32)
+
+        # weekday-conditional counts
+        red_counts_c = np.zeros(33, dtype=np.float64)
+        blue_counts_c = np.zeros(16, dtype=np.float64)
+        n_c = 0.0
+        for balls, wb, wd_i, weight in zip(reds_list, blues_list, wdays, w):
+            if wd_i == cond_weekday:
+                n_c += 1.0
+                for b in balls:
+                    red_counts_c[b-1] += weight
+                blue_counts_c[wb-1] += weight
+        # if too few samples, fall back to global via shrinkage
+        pr_c = red_counts_c / red_counts_c.sum() if red_counts_c.sum() > 0 else pr_g
+        pb_c = blue_counts_c / blue_counts_c.sum() if blue_counts_c.sum() > 0 else pb_g
+        mix = n_c / (n_c + shrink_beta)
+        pr = mix * pr_c + (1.0 - mix) * pr_g
+        pb = mix * pb_c + (1.0 - mix) * pb_g
         return pr.astype(np.float32), pb.astype(np.float32)
+    def _marginal_probs_window(self, decay_half_life=60, cond_weekday=None, window=None, shrink_beta=SHRINK_BETA_WEEKDAY):
+        """在窗口内计算时间衰减边际概率；若 window 为 None 则等同全量。"""
+        data_sorted = sorted(self.lottery_data, key=lambda r: (r["date"], r["period"]))
+        if window is not None and window > 0:
+            data_sorted = data_sorted[-int(window):]
+        # 临时分析器以复用现有逻辑
+        tmp = DoubleColorBallAnalyzer()
+        tmp.lottery_data = list(data_sorted)
+        return tmp.compute_marginal_probs(decay_half_life=decay_half_life, cond_weekday=cond_weekday, shrink_beta=shrink_beta)
+
+    def _three_way_fused_prior(self, decay_half_life=60):
+        """返回(红,蓝)的三向融合先验: 近窗/周几/全局。"""
+        target_wd = self._next_draw_weekday()
+        # 近窗 + 周几
+        pr_short, pb_short = self._marginal_probs_window(decay_half_life=decay_half_life, cond_weekday=target_wd, window=SHORT_WINDOW, shrink_beta=SHRINK_BETA_WEEKDAY)
+        # 全量 + 周几
+        pr_wd, pb_wd = self.compute_marginal_probs(decay_half_life=decay_half_life, cond_weekday=target_wd, shrink_beta=SHRINK_BETA_WEEKDAY)
+        # 全量(不按周几)
+        pr_g, pb_g = self.compute_marginal_probs(decay_half_life=decay_half_life, cond_weekday=None, shrink_beta=SHRINK_BETA_WEEKDAY)
+        # 融合
+        lam1 = float(np.clip(FUSION_L1_SHORT, 0.0, 1.0))
+        lam2 = float(np.clip(FUSION_L2_WEEKDAY, 0.0, 1.0))
+        lam3 = max(0.0, 1.0 - lam1 - lam2)
+        pr = lam1 * pr_short + lam2 * pr_wd + lam3 * pr_g
+        pb = lam1 * pb_short + lam2 * pb_wd + lam3 * pb_g
+        pr = (pr / pr.sum()).astype(np.float32)
+        pb = (pb / pb.sum()).astype(np.float32)
+        return pr, pb
+    def _temp_smooth(self, p, tau=1.3):
+        """Temperature smoothing for probability vectors (tau>1 => softer)."""
+        p = np.clip(np.asarray(p, dtype=np.float64), 1e-12, 1.0)
+        logp = np.log(p)
+        q = np.exp(logp / max(1e-6, tau))
+        return (q / q.sum()).astype(np.float32)
 
     def compute_entropy(self, probs):
         """Shannon entropy (bits)."""
         p = np.clip(np.asarray(probs, dtype=np.float64), 1e-12, 1.0)
         return float(scipy_entropy(p, base=2))
+
+    def _recent_hot_blues(self, window=10, min_count=2):
+        """蓝球在最近 window 期中出现至少 min_count 次的号码"""
+        if not self.lottery_data:
+            return []
+        data_sorted = self._sorted_data(descending=True)
+        recent = data_sorted[:max(1, window)]
+        cnt = Counter([r['blue_ball'] for r in recent])
+        hots = [b for b, c in cnt.items() if c >= max(1, min_count)]
+        return sorted(hots)
 
     def train_ml_model(self, seq_len=10, epochs=5, lr=1e-3, hidden_size=64, dropout=0.2):
         """
@@ -604,9 +731,10 @@ class DoubleColorBallAnalyzer:
         If blend_alpha == "auto": tune alpha by comparing ML vs. marginal distributions
         using symmetric KL divergence (smaller divergence -> larger alpha).
         """
-        p_marg_red, p_marg_blue = self.compute_marginal_probs(decay_half_life=decay_half_life)
+        # 三向融合先验（短窗/周几/全局）
+        p_marg_red, p_marg_blue = self._three_way_fused_prior(decay_half_life=decay_half_life)
         if not self.trained:
-            print("模型未训练，使用时间衰减频率作为概率。")
+            print("模型未训练，使用三向融合先验作为概率。")
             return p_marg_red, p_marg_blue
 
         ds = self._build_sequence_dataset(seq_len=self.seq_len)
@@ -622,17 +750,26 @@ class DoubleColorBallAnalyzer:
         p_red_ml = p_red_ml.squeeze(0).cpu().numpy()
         p_blue_ml = p_blue_ml.squeeze(0).cpu().numpy()
 
-        # normalize reds into a distribution
+        # 归一化 + 温度平滑（蓝球更保守）
         p_red_ml = p_red_ml / (p_red_ml.sum() + 1e-12)
+        tau_blue = TAU_BLUE + (0.1 if float(np.max(p_blue_ml)) > 0.18 else 0.0)
+        p_red_ml  = self._temp_smooth(p_red_ml, tau=TAU_RED)
+        p_blue_ml = self._temp_smooth(p_blue_ml, tau=tau_blue)
 
-        # auto-tune alpha
+        # 自适应 alpha（基于对先验的偏离）
         if blend_alpha == "auto":
             d_red = self._sym_kl(p_red_ml, p_marg_red)
             d_blue = self._sym_kl(p_blue_ml, p_marg_blue)
             d = 0.7 * d_red + 0.3 * d_blue
-            alpha = 1.0 / (1.0 + 4.0 * d)  # heuristic scaling
-            alpha = float(np.clip(alpha, 0.25, 0.8))
-            print(f"🔧 自适应融合系数 alpha={alpha:.3f} (基于分布差异)")
+            alpha = 1.0 / (1.0 + 4.0 * d)
+            alpha = float(np.clip(alpha, 0.20, 0.60))
+            # 若最近 WEEKDAY_RECENT_WINDOW 期内目标周几样本过少，则降低自信
+            data_sorted = sorted(self.lottery_data, key=lambda r: (r["date"], r["period"]))
+            recent = data_sorted[-int(min(WEEKDAY_RECENT_WINDOW, len(data_sorted))):]
+            n_wd = sum(1 for r in recent if self._weekday_from_date(r["date"]) == self._next_draw_weekday())
+            if n_wd < WEEKDAY_MIN_COUNT:
+                alpha *= 0.85
+            print(f"🔧 自适应融合系数 alpha={alpha:.3f} (三向先验)")
         else:
             alpha = float(blend_alpha)
 
@@ -684,7 +821,7 @@ class DoubleColorBallAnalyzer:
             available = np.array([x for x in available if x != val])
         return sorted(chosen)
 
-    def _monte_carlo_candidates(self, p_red, p_blue, n=2000, sum_mu=None, sum_low=None, sum_high=None):
+    def _monte_carlo_candidates(self, p_red, p_blue, n=2000, sum_mu=None, sum_low=None, sum_high=None, recent_hot_blues=None):
             """
             Monte Carlo guided by probabilities & optional sum constraints.
             Returns list of (reds, blue, score, entropy_bits).
@@ -695,22 +832,49 @@ class DoubleColorBallAnalyzer:
                 s = sum(reds)
                 if sum_low is not None and sum_high is not None and not (sum_low <= s <= sum_high):
                     continue
-                # entropy over the selected set
+                # 选中集的熵与评分
                 q = np.array([p_red[r-1] for r in reds], dtype=np.float64)
                 q = q / q.sum()
-                H = self.compute_entropy(q)  # 0..log2(6)
+                H = self.compute_entropy(q)
                 mean_p = float(np.mean([p_red[r-1] for r in reds]))
                 score = 0.7 * mean_p - 0.3 * (H / np.log2(6))
-                # adaptive top-k for blue: sharper distribution -> smaller k
+
+                # 蓝球：自适应 top-k + 热蓝集合，但热蓝总体权重≤40%
                 sharp = float(np.max(p_blue))
                 k_adapt = int(np.clip(6 - round(4 * sharp / (np.max(p_blue) + 1e-12)), 2, 6))
                 k_adapt = min(k_adapt, len(p_blue))
                 top_idx = np.argsort(p_blue)[-k_adapt:]
-                top_probs = p_blue[top_idx] / p_blue[top_idx].sum()
-                blue_idx = int(top_idx[np.random.choice(len(top_idx), p=top_probs)]) + 1
+
+                hot_set = set(recent_hot_blues or [])
+                hot_idx = sorted({b-1 for b in hot_set if 1 <= b <= 16})
+                merged = sorted(set(top_idx.tolist()) | set(hot_idx))
+                base = p_blue[merged].astype(np.float64)
+                base = base / (base.sum() + 1e-12)
+
+                # 按组加权：hot ≤ 0.4，其余分给非热蓝
+                if merged:
+                    mask_hot = np.array([1 if i in hot_idx else 0 for i in merged], dtype=np.float64)
+                    w_hot = min(0.40, float(mask_hot.sum()) / max(1.0, len(merged)))  # 上限 40%
+                    w_cold = 1.0 - w_hot
+                    if mask_hot.sum() > 0 and mask_hot.sum() < len(merged):
+                        base_hot = base * mask_hot
+                        base_cold = base * (1.0 - mask_hot)
+                        # 归一化到各自权重
+                        sh = base_hot.sum(); sc = base_cold.sum()
+                        if sh > 0: base_hot = (base_hot / sh) * w_hot
+                        if sc > 0: base_cold = (base_cold / sc) * w_cold
+                        mix_probs = base_hot + base_cold
+                    else:
+                        mix_probs = base  # 全热或全冷时直接用 base
+                else:
+                    mix_probs = base
+                mix_probs = mix_probs / (mix_probs.sum() + 1e-12)
+
+                blue_idx = int(merged[np.random.choice(len(merged), p=mix_probs)]) + 1
                 key = (tuple(reds), blue_idx)
                 if key not in candidates or score > candidates[key][0]:
                     candidates[key] = (score, H)
+
             out = []
             for (reds, blue), (score, H) in candidates.items():
                 out.append((list(reds), int(blue), float(score), float(H)))
@@ -813,7 +977,9 @@ class DoubleColorBallAnalyzer:
 
         # 1) fused probabilities (ML + time-decayed marginals)
         p_red, p_blue = self.predict_next_probabilities(blend_alpha="auto", decay_half_life=60)
-        
+        print("先验: 三向融合(短窗/周几/全局) + 温度(Tred=1.3, Tblue=1.5±)")
+        self._last_pred_probs = (p_red, p_blue)
+
         # 2) ARIMA sum forecast -> range constraint
         mu, low, high = self._arima_sum_forecast(horizon=1)
         sum_low = max(60, int(low) - 5)
@@ -821,10 +987,17 @@ class DoubleColorBallAnalyzer:
         print(f"ARIMA 预测和值区间: 目标≈{mu:.1f}, 允许范围 [{sum_low}, {sum_high}]")
 
         # 3) Monte Carlo candidates with entropy penalty
-        raw_candidates = self._monte_carlo_candidates(p_red, p_blue, n=2500, sum_mu=mu, sum_low=sum_low, sum_high=sum_high)
+        raw_candidates = self._monte_carlo_candidates(
+            p_red, p_blue, n=2500, sum_mu=mu, sum_low=sum_low, sum_high=sum_high,
+            recent_hot_blues=self._recent_hot_blues(window=10, min_count=2)
+        )
         if not raw_candidates:
             print("候选为空，回退到无和值约束的采样。")
-            raw_candidates = self._monte_carlo_candidates(p_red, p_blue, n=2500)
+        # 回退时：
+            raw_candidates = self._monte_carlo_candidates(
+                p_red, p_blue, n=2500,
+                recent_hot_blues=self._recent_hot_blues(window=10, min_count=2)
+            )
 
         # 4) take top-K unique
         recommendations = []
@@ -859,7 +1032,45 @@ class DoubleColorBallAnalyzer:
             print(f"推荐 {i}: {red_str} + {rec['blue_ball']:2d} | 熵:{rec['entropy_bits']:.3f}bits | 置信度:{rec['confidence']:.6f} | 和值:{rec['sum']} | 跨度:{rec['span']} | {rec['odd_even']}")
 
         return recommendations
-    
+
+    def evaluate_latest_draw(self, recommendations):
+        """报告最新一期与推荐/概率的对比"""
+        if not self.lottery_data:
+            print("无数据，无法评估当期命中情况")
+            return
+        latest = self._sorted_data(descending=True)[0]
+        reds_true = set(latest['red_balls'])
+        blue_true = latest['blue_ball']
+
+        p_red, p_blue = getattr(self, '_last_pred_probs', (None, None))
+        if p_red is not None and p_blue is not None:
+            red_mass = float(sum(p_red[r-1] for r in reds_true))
+            blue_rank = int((16 - np.argsort(np.argsort(p_blue))[blue_true-1]))  # 1=最高
+            blue_top3 = blue_rank <= 3
+        else:
+            red_mass, blue_rank, blue_top3 = float('nan'), -1, False
+
+        best_overlap = 0
+        blue_hit = False
+        for rec in recommendations:
+            ov = len(reds_true.intersection(rec['red_balls']))
+            best_overlap = max(best_overlap, ov)
+            if rec['blue_ball'] == blue_true:
+                blue_hit = True
+
+        print("\n=== 当期回测（最新期） ===")
+        print(f"期号: {latest['period']} 日期: {latest['date']} 开奖: {sorted(list(reds_true))} + {blue_true:02d}")
+        print(f"推荐组合最佳红球重合数: {best_overlap} / 6 | 是否命中蓝球: {'是' if blue_hit else '否'}")
+        if p_red is not None:
+            print(f"红球概率质量(真值总和): {red_mass:.4f} | 蓝球概率名次: Top-{blue_rank}{' (≤3)' if blue_top3 else ''}")
+        if blue_hit and best_overlap == 6: tier = '一等奖(理论)'
+        elif best_overlap == 6:           tier = '二等奖(理论)'
+        elif best_overlap == 5 and blue_hit: tier = '三等奖(理论)'
+        elif (best_overlap == 5) or (best_overlap == 4 and blue_hit): tier = '四等奖(理论)'
+        elif (best_overlap == 4) or (best_overlap == 3 and blue_hit): tier = '五等奖(理论)'
+        elif (best_overlap == 2 and blue_hit): tier = '六等奖(理论)'
+        else: tier = '未中奖(理论)'
+        print(f"按最佳重合估计奖级: {tier}")    
     def _select_with_odd_even_balance(self, pool, count, existing_reds):
         """在选择时考虑奇偶平衡"""
         if count <= 0:
@@ -1016,7 +1227,8 @@ class DoubleColorBallAnalyzer:
 ## 📊 报告信息
 - **生成时间**: {current_time} (UTC+8)
 - **数据期数**: 共 {len(self.lottery_data)} 期
-- **最新期号**: {self.lottery_data[0]['period'] if self.lottery_data else 'N/A'}
+- **下一期开奖日(按周)**: {['周一','周二','周三','周四','周五','周六','周日'][self._next_draw_weekday()]}
+- **最新期号**: {self._sorted_data(descending=True)[0]['period'] if self.lottery_data else 'N/A'}
 - **数据来源**: 中国福利彩票官方API
 
 ## ⚠️ 重要免责声明
@@ -1031,7 +1243,8 @@ class DoubleColorBallAnalyzer:
         # 添加最近5期开奖信息
         if len(self.lottery_data) >= 5:
             report_content += "### 最近5期开奖号码\n\n"
-            for i, record in enumerate(self.lottery_data[:5]):
+            latest5 = self._sorted_data(descending=True)[:5]
+            for i, record in enumerate(latest5):
                 red_str = " ".join([f"{x:02d}" for x in record['red_balls']])
                 report_content += f"**{record['period']}期** ({record['date']}): {red_str} + **{record['blue_ball']:02d}**\n\n"
         
@@ -1237,8 +1450,9 @@ class DoubleColorBallAnalyzer:
                 'hot_blues': '无'
             }
         
-        recent_10 = self.lottery_data[:10]
-        
+        data_sorted = self._sorted_data(descending=True)
+        recent_10 = data_sorted[:10]   
+             
         # 格式化最近10期
         recent_draws = "| 期号 | 开奖日期 | 红球号码 | 蓝球 |\n|------|----------|----------|------|\n"
         for record in recent_10:
@@ -1524,87 +1738,93 @@ class DoubleColorBallAnalyzer:
         }
     
     def update_readme_recommendations(self, readme_path="README.md", timestamp=None):
-        """更新README.md中的推荐号码"""
+        """更新/替换 README.md 中的推荐号码区块（无重复、无缩进代码块）。
+        - 使用锚点 `<!-- BEGIN:recommendations -->` 与 `<!-- END:recommendations -->` 包裹内容；
+        - 若锚点存在则原地替换；否则在第一个 H1 标题后插入；若找不到 H1，则追加到末尾；
+        - 生成的 Markdown 不带多余前导空格，避免被渲染为代码块。
+        """
         print(f"正在更新README.md中的双色球推荐号码...")
-        
         if not self.lottery_data:
             print("无数据，无法更新README推荐号码")
             return
-        
+
         try:
-            # 生成推荐号码
+            # 生成推荐号码（避免过多 I/O 重复，默认 5 组）
             recommendations = self.generate_recommendations(num_sets=5)
 
-            # 读取现有README内容或创建最小骨架
+            # 读取或初始化 README 内容
             if not os.path.exists(readme_path):
-                print(f"ℹ️  README 不存在：将创建最小 README 并插入推荐区。")
+                print("ℹ️  README 不存在：将创建最小 README 与锚点区块。")
                 content = "# 🎯 双色球开奖数据分析系统\n\n> 本仓库为历史数据分析与可视化，仅供学习研究使用。\n\n"
             else:
                 with open(readme_path, 'r', encoding='utf-8') as f:
                     content = f.read()
 
-            # 使用传入的时间戳或生成新的时间戳 UTC+8
-            if timestamp:
-                current_time = timestamp
-            else:
-                current_time = (datetime.now() + timedelta(hours=8)).strftime('%Y年%m月%d日 %H:%M:%S')
+            # 时间戳（UTC+8）
+            current_time = timestamp if timestamp else (datetime.now() + timedelta(hours=8)).strftime('%Y年%m月%d日 %H:%M:%S')
 
-            # 构建推荐号码内容（保留你原来的模板，但不会因文件缺失失败）
-            recommendations_content = f"""## 🎯 今日推荐号码
+            # 组装推荐区块（严格避免行首缩进）
+            header_lines = [
+                "<!-- BEGIN:recommendations -->",
+                "## 🎯 今日推荐号码",
+                "",
+                "**⚠️ 以下推荐号码基于历史统计分析，仅供参考，不保证中奖！**",
+                "",
+                f"### 双色球推荐 (更新时间: {current_time})",
+                "",
+            ]
 
-        **⚠️ 以下推荐号码基于历史统计分析，仅供参考，不保证中奖！**
-
-        ### 双色球推荐 (更新时间: {current_time})
-
-        """
+            rec_lines = []
             for i, rec in enumerate(recommendations, 1):
                 red_str = " ".join([f"{x:02d}" for x in rec['red_balls']])
-                recommendations_content += f"**推荐 {i}** ({rec['strategy']}): `{red_str}` + `{rec['blue_ball']:02d}`  \n"
-                recommendations_content += f"*{rec['description']} | {rec['odd_even']} | 和值:{rec['sum']} | 跨度:{rec['span']}*\n\n"
+                rec_lines.append(f"**推荐 {i}** ({rec.get('strategy','ML低熵')}): `{red_str}` + `{rec['blue_ball']:02d}`  ")
+                rec_lines.append(f"*{rec.get('description','LSTM+ARIMA+MonteCarlo 低熵组合')} | {rec['odd_even']} | 和值:{rec['sum']} | 跨度:{rec['span']}*")
+                rec_lines.append("")
 
-            # 查找第二个H2标题的位置（免责声明后）
-            lines = content.split('\n')
-            h2_count = 0
-            insert_index = -1
+            footer_lines = ["<!-- END:recommendations -->", ""]
+            block = "\n".join(header_lines + rec_lines + footer_lines)
 
-            for i, line in enumerate(lines):
-                if line.startswith('## '):
-                    h2_count += 1
-                    if h2_count == 2:  # 第二个H2标题
-                        insert_index = i
-                        break
+            # 用锚点替换或插入
+            begin_tag = "<!-- BEGIN:recommendations -->"
+            end_tag = "<!-- END:recommendations -->"
 
-            if insert_index == -1:
-                print("未找到合适的插入位置，将在文件末尾添加")
-                new_content = content.rstrip() + "\n\n" + recommendations_content
+            if begin_tag in content and end_tag in content:
+                # 直接替换锚点之间的内容
+                new_content = re.sub(
+                    begin_tag + r"[\s\S]*?" + end_tag,
+                    block,
+                    content,
+                    flags=re.MULTILINE
+                )
+                action = "替换"
             else:
-                # 检查是否已存在推荐号码部分
-                existing_rec_index = -1
-                for i in range(insert_index, len(lines)):
-                    if "今日推荐号码" in lines[i]:
-                        existing_rec_index = i
+                # 找到第一个 H1 后插入（若不存在则末尾追加）
+                lines = content.splitlines()
+                insert_pos = -1
+                for idx, line in enumerate(lines):
+                    if line.startswith('# '):
+                        insert_pos = idx + 1
                         break
-
-                if existing_rec_index != -1:
-                    # 找到推荐号码部分的结束位置
-                    end_index = existing_rec_index
-                    for i in range(existing_rec_index + 1, len(lines)):
-                        if lines[i].startswith('## '):
-                            end_index = i
-                            break
-                    else:
-                        end_index = len(lines)
-
-                    new_lines = lines[:existing_rec_index] + recommendations_content.strip().split('\n') + lines[end_index:]
+                if insert_pos == -1:
+                    # 末尾追加
+                    if content and not content.endswith('\n'):
+                        content += '\n'
+                    new_content = content + block
+                    action = "追加"
                 else:
-                    new_lines = lines[:insert_index] + recommendations_content.strip().split('\n') + [''] + lines[insert_index:]
-
-                new_content = '\n'.join(new_lines)
+                    # 在 H1 后插入一个空行 + 区块
+                    prefix = lines[:insert_pos]
+                    suffix = lines[insert_pos:]
+                    if len(prefix) == 0 or (prefix and prefix[-1].strip() != ""):
+                        prefix.append("")
+                    new_lines = prefix + [block] + [""] + suffix
+                    new_content = "\n".join(new_lines)
+                    action = "插入"
 
             with open(readme_path, 'w', encoding='utf-8') as f:
                 f.write(new_content)
 
-            print(f"README.md中的双色球推荐号码已更新")
+            print(f"README.md中的双色球推荐号码已更新（{action}模式）")
 
         except Exception as e:
             print(f"更新README推荐号码失败: {e}")
@@ -1655,7 +1875,11 @@ def main():
         print(f"⚠️  模型训练失败: {e}，将使用时间衰减频率作为备选。")
         analyzer.trained = False
     print(f"🧪 模型训练状态: {'已训练(使用LSTM融合)' if analyzer.trained else '未训练(使用时间衰减频率)'}")
-    analyzer.generate_recommendations(num_sets=8)
+    recs = analyzer.generate_recommendations(num_sets=8)
+    try:
+        analyzer.evaluate_latest_draw(recs)
+    except Exception as _e:
+        print(f"评估当期命中情况失败: {_e}")
     # 生成推荐号码
     # recommendations = analyzer.generate_recommendations(num_sets=5)
     
