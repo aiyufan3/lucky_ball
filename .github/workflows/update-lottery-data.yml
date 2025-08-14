@@ -1,226 +1,169 @@
-name: 更新双色球与快乐8数据与报告
+name: 更新彩票数据和分析报告
 
 on:
   schedule:
     # 每天晚上23:00 (UTC+8) 运行，对应 15:00 UTC
     - cron: '0 15 * * *'
-  workflow_dispatch:  # 允许手动触发
+  workflow_dispatch: # 允许手动触发
   push:
-    branches: [ main ]
+    branches: [ main ]  # 推送到main分支时触发
   pull_request:
-    branches: [ main ]
-    types: [ closed ]
-
-permissions:
-  contents: write  # 允许推送与创建 release
+    branches: [ main ]  # PR合并到main分支时触发
+    types: [ closed ]   # 只在PR关闭时触发
 
 jobs:
   update-lottery-data:
     runs-on: ubuntu-latest
+    # 确保PR只在合并时运行，而不是简单关闭时运行
     if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
 
     steps:
-      - name: 检出代码
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+    - name: 检出代码
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 设置 Python 环境
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
+    - name: 设置Python环境
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
 
-      - name: 缓存 pip 依赖
-        uses: actions/cache@v3
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
+    - name: 缓存pip依赖
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
 
-      - name: 安装依赖
-        run: |
-          python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then
-            pip install -r requirements.txt
+    - name: 安装依赖
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests pandas numpy matplotlib seaborn beautifulsoup4 hjson DrissionPage
+
+        # DrissionPage 如需浏览器，请在需要时开启以下脚本（默认关闭以加快执行速度）
+        # echo "安装Chrome浏览器..."
+        # wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+        # echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" | sudo tee /etc/apt/sources.list.d/google-chrome.list
+        # sudo apt-get update
+        # sudo apt-get install -y google-chrome-stable
+        # google-chrome --version
+        # export DISPLAY=:99
+
+    - name: 运行彩票数据分析
+      run: |
+        echo "开始运行彩票数据分析..."
+        if [ -f "main.py" ]; then
+          python main.py || true
+        elif [ -f "lottery_analyzer.py" ]; then
+          python lottery_analyzer.py || true
+        else
+          echo "未找到 main.py 或 lottery_analyzer.py，跳过分析步骤"
+        fi
+        echo "分析完成，继续到文件变更检查步骤..."
+
+    - name: 检查文件变更
+      id: git-check
+      run: |
+        echo "检查文件变更..."
+        # 仅在这些目录/文件存在时再比较
+        TARGETS=()
+        for p in data reports pics; do
+          [ -e "$p" ] && TARGETS+=("$p")
+        done
+        if [ ${#TARGETS[@]} -eq 0 ]; then
+          echo "未找到 data/ reports/ pics/ 目录或文件，视为无变化"
+          echo "changed=false" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+        if git diff --exit-code "${TARGETS[@]}" > /dev/null 2>&1; then
+          echo "没有检测到文件变更"
+          echo "changed=false" >> $GITHUB_OUTPUT
+        else
+          echo "检测到文件变更"
+          echo "changed=true" >> $GITHUB_OUTPUT
+          echo "变更的文件:"
+          git diff --name-only "${TARGETS[@]}" || true
+        fi
+
+    - name: 提交更新
+      if: steps.git-check.outputs.changed == 'true'
+      run: |
+        echo "准备提交文件变更..."
+        git config --local user.email "snjyor@gmail.com"
+        git config --local user.name "snjyor"
+
+        [ -d "data" ] && git add data/ || echo "data 目录不存在"
+        [ -d "reports" ] && git add reports/ || echo "reports 目录不存在"
+        [ -d "pics" ] && git add pics/ || echo "pics 目录不存在"
+
+        if git diff --cached --quiet; then
+          echo "没有文件需要提交"
+          exit 0
+        fi
+
+        commit_message="🎯 更新彩票数据和分析报告 - $(TZ='Asia/Shanghai' date +'%Y-%m-%d %H:%M:%S') (UTC+8)"
+        git commit -m "$commit_message"
+        git push
+        echo "文件提交成功"
+
+    - name: 创建重大更新的发布版本
+      if: steps.git-check.outputs.changed == 'true'
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        echo "准备创建发布版本..."
+        TAG_NAME="$(TZ='Asia/Shanghai' date +'%Y%m%d')"
+        if ! git tag | grep -q "^$TAG_NAME$"; then
+          git tag $TAG_NAME
+          git push origin $TAG_NAME
+
+          NOTES=$'## 🎯 彩票数据更新 - '"$(TZ='Asia/Shanghai' date +'%Y年%m月%d日')"$' (UTC+8)\n\n'
+          NOTES+=$'### 📊 本次更新内容\n'
+          NOTES+=$'- 抓取最新双色球开奖数据\n'
+          NOTES+=$'- 更新统计分析图表\n'
+          NOTES+=$'- 刷新号码频率分析\n'
+          NOTES+=$'- 更新分析报告文档\n\n'
+          NOTES+=$'### 📁 更新文件\n'
+          NOTES+=$'**双色球数据：**\n'
+          NOTES+=$'- data/lottery_data.json - 双色球开奖数据\n'
+          NOTES+=$'- data/lottery_aggregated_data.hjson - 双色球聚合分析数据\n'
+          NOTES+=$'- reports/double_color_ball_analysis_report.md - 双色球分析报告\n'
+          NOTES+=$'- pics/lottery_frequency_analysis.png - 双色球频率图表\n\n'
+          NOTES+=$'（备注：大乐透数据已暂停处理）\n\n'
+          NOTES+=$'### ⚠️ 免责声明\n'
+          NOTES+=$'本数据仅供学习和统计分析使用，彩票开奖完全随机，请理性购彩。\n'
+
+          upload_files=""
+          [ -f "data/lottery_data.json" ] && upload_files="$upload_files data/lottery_data.json"
+          [ -f "data/lottery_aggregated_data.hjson" ] && upload_files="$upload_files data/lottery_aggregated_data.hjson"
+          [ -f "reports/analysis_report.md" ] && upload_files="$upload_files reports/analysis_report.md"
+          [ -f "pics/lottery_frequency_analysis.png" ] && upload_files="$upload_files pics/lottery_frequency_analysis.png"
+
+          if [ -n "$upload_files" ]; then
+            gh release create $TAG_NAME \
+              --title "彩票数据更新 $TAG_NAME" \
+              --notes "$NOTES" \
+              $upload_files
+            echo "发布版本创建成功，包含文件: $upload_files"
           else
-            # 兜底安装常用依赖
-            pip install requests pandas numpy matplotlib seaborn beautifulsoup4 hjson
+            gh release create $TAG_NAME \
+              --title "彩票数据更新 $TAG_NAME" \
+              --notes "$NOTES"
+            echo "发布版本创建成功，但没有数据文件可上传"
           fi
-          echo "MPLBACKEND=Agg" >> $GITHUB_ENV  # 无头环境使用非交互后端
+        else
+          echo "Tag $TAG_NAME 已存在，跳过创建发布版本"
+        fi
 
-      - name: 运行 双色球（DoubleColorBall）分析
-        run: |
-          echo "开始运行：双色球分析..."
-          if [ -f "lottery_analyzer.py" ]; then
-            python lottery_analyzer.py || true
-          elif [ -f "scripts/lottery_analyzer.py" ]; then
-            python scripts/lottery_analyzer.py || true
-          elif [ -f "main.py" ]; then
-            python main.py || true
-          else
-            echo "未找到双色球分析入口 (lottery_analyzer.py / scripts/lottery_analyzer.py / main.py)"
-          fi
-          echo "双色球分析完成"
-
-      - name: 准备 快乐8 赔率文件（若缺失则写入示例-任选7）
-        run: |
-          mkdir -p data
-          if [ ! -f data/payouts_kl8.json ]; then
-            cat > data/payouts_kl8.json << 'JSON'
-            {
-              "choose": 7,
-              "price_per_bet": 2.0,
-              "payouts": {
-                "0": 2,
-                "1": 0,
-                "2": 0,
-                "3": 0,
-                "4": 10,
-                "5": 28,
-                "6": 288,
-                "7": 10000
-              }
-            }
-            JSON
-          fi
-
-      - name: 运行 快乐8（KL8）抓取与分析
-        run: |
-          echo "开始运行：快乐8分析（仅最近30期 + 任选7，生成图表与报告）..."
-          if [ -f "scripts/super_eight.py" ]; then
-            # 抓取最近 30 期
-            python scripts/super_eight.py --fetch --limit 30 || true
-            # 生成图表 + 报告 + 资金方案（忽略 Kelly，用全部预算，示例预算22元）
-            python scripts/super_eight.py \
-              --recommend 5 \
-              --play_pick 7 \
-              --payouts data/payouts_kl8.json \
-              --plan --budget 22 --price_per_bet 2 \
-              --plots --plots_dual --split 40 \
-              --beta 8 --max_share 0.6 --min_stake 1 \
-              --kelly_mode ignore \
-              --report --seed 42 || true
-          else
-            echo "未找到 KL8 分析脚本 scripts/super_eight.py"
-          fi
-          echo "快乐8分析完成"
-
-      - name: 检查文件变更
-        id: git-check
-        run: |
-          echo "检查文件变更..."
-          # 列出需要监控的路径/文件（双色球 + KL8）
-          MONITOR_PATHS=(
-            data/ reports/ pics/ plots/
-            kl8_analysis_report.md kl8_profit_plan.md
-          )
-          # 过滤出存在的目标用于 diff
-          EXISTING_PATHS=()
-          for p in "${MONITOR_PATHS[@]}"; do
-            if [ -e "$p" ]; then
-              EXISTING_PATHS+=("$p")
-            fi
-          done
-          if [ ${#EXISTING_PATHS[@]} -eq 0 ]; then
-            echo "changed=false" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          if git diff --exit-code "${EXISTING_PATHS[@]}" > /dev/null 2>&1; then
-            echo "没有检测到文件变更"
-            echo "changed=false" >> $GITHUB_OUTPUT
-          else
-            echo "检测到文件变更"
-            echo "changed=true" >> $GITHUB_OUTPUT
-            echo "变更的文件:"
-            git diff --name-only "${EXISTING_PATHS[@]}" || true
-          fi
-
-      - name: 提交更新
-        if: steps.git-check.outputs.changed == 'true'
-        run: |
-          echo "准备提交文件变更..."
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-
-          # 仅添加存在的路径
-          [ -d "data" ] && git add data/ || true
-          [ -d "reports" ] && git add reports/ || true
-          [ -d "pics" ] && git add pics/ || true
-          [ -d "plots" ] && git add plots/ || true
-          [ -f "kl8_analysis_report.md" ] && git add kl8_analysis_report.md || true
-          [ -f "kl8_profit_plan.md" ] && git add kl8_profit_plan.md || true
-
-          if git diff --cached --quiet; then
-            echo "没有文件需要提交"
-            exit 0
-          fi
-
-          commit_message="🎯 更新双色球与快乐8数据与报告 - $(TZ='Asia/Shanghai' date +'%Y-%m-%d %H:%M:%S') (UTC+8)"
-          git commit -m "$commit_message"
-          git push
-          echo "文件提交成功"
-
-      - name: 创建当日发布版本（若有变更）
-        if: steps.git-check.outputs.changed == 'true'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          echo "准备创建发布版本..."
-          TAG_NAME="$(TZ='Asia/Shanghai' date +'%Y%m%d')"
-          if ! git tag | grep -q "^$TAG_NAME$"; then
-            git tag $TAG_NAME
-            git push origin $TAG_NAME
-
-            cat > release_notes.md << 'EOF'
-            ## 🎯 数据更新 - $(TZ='Asia/Shanghai' date +'%Y年%m月%d日') (UTC+8)
-
-            ### 📊 本次更新内容
-            - 抓取最新 **双色球** 与 **快乐8** 开奖数据
-            - 更新频率/趋势图表与分析报告
-
-            ### 📁 主要文件
-            - `data/lottery_data.json`（双色球）
-            - `data/kl8_history.json`（快乐8）
-            - `reports/analysis_report.md`（双色球）
-            - `kl8_analysis_report.md` / `kl8_profit_plan.md`（快乐8）
-            - `pics/lottery_frequency_analysis.png`（双色球图表）
-            - `plots/kl8_*`（快乐8图表）
-
-            ### ⚠️ 免责声明
-            本数据仅供学习和统计分析使用，彩票开奖完全随机，请理性购彩。
-            EOF
-
-            # 选择存在的工件上传
-            upload_files=""
-            [ -f "data/lottery_data.json" ] && upload_files="$upload_files data/lottery_data.json"
-            [ -f "data/kl8_history.json" ] && upload_files="$upload_files data/kl8_history.json"
-            [ -f "reports/analysis_report.md" ] && upload_files="$upload_files reports/analysis_report.md"
-            [ -f "kl8_analysis_report.md" ] && upload_files="$upload_files kl8_analysis_report.md"
-            [ -f "kl8_profit_plan.md" ] && upload_files="$upload_files kl8_profit_plan.md"
-            [ -f "pics/lottery_frequency_analysis.png" ] && upload_files="$upload_files pics/lottery_frequency_analysis.png"
-
-            if [ -n "$upload_files" ]; then
-              gh release create $TAG_NAME \
-                --title "数据更新 $TAG_NAME" \
-                --notes-file release_notes.md \
-                $upload_files
-              echo "发布版本创建成功，包含文件: $upload_files"
-            else
-              gh release create $TAG_NAME \
-                --title "数据更新 $TAG_NAME" \
-                --notes-file release_notes.md
-              echo "发布版本创建成功，但没有数据文件可上传"
-            fi
-          else
-            echo "Tag $TAG_NAME 已存在，跳过创建发布版本"
-          fi
-
-      - name: 输出结果
-        run: |
-          if [ "${{ steps.git-check.outputs.changed }}" == "true" ]; then
-            echo "✅ 数据已更新并提交 - $(TZ='Asia/Shanghai' date +'%Y-%m-%d %H:%M:%S') (UTC+8)"
-          else
-            echo "ℹ️ 数据无变化，跳过提交 - $(TZ='Asia/Shanghai' date +'%Y-%m-%d %H:%M:%S') (UTC+8)"
-          fi
+    - name: 输出结果
+      run: |
+        if [ "${{ steps.git-check.outputs.changed }}" == "true" ]; then
+          echo "✅ 彩票数据已更新并提交 - $(TZ='Asia/Shanghai' date +'%Y-%m-%d %H:%M:%S') (UTC+8)"
+          echo "📁 更新的文件:"
+          [ -f "data/lottery_data.json" ] && echo "  ✓ 双色球开奖数据"
+          [ -f "reports/analysis_report.md" ] && echo "  ✓ 双色球分析报告"
+          [ -f "pics/lottery_frequency_analysis.png" ] && echo "  ✓ 双色球频率图表"
+        else
+          echo "ℹ️ 彩票数据无变化，跳过提交 - $(TZ='Asia/Shanghai' date +'%Y-%m-%d %H:%M:%S') (UTC+8)"
+        fi

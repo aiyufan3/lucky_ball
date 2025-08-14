@@ -1202,7 +1202,7 @@ class DoubleColorBallAnalyzer:
         """
         print(rules)
     
-    def generate_analysis_report(self, filename="reports/analysis_report.md"):
+    def generate_analysis_report(self, filename="reports/double_color_ball_analysis_report.md"):
         """生成完整的分析报告文件"""
         print(f"正在生成分析报告: {filename}")
         
@@ -1737,7 +1737,7 @@ class DoubleColorBallAnalyzer:
             'hot_blues': sorted(hot_blues)
         }
     
-    def update_readme_recommendations(self, readme_path="README.md", timestamp=None):
+    def update_readme_recommendations(self, readme_path="reports/double_color_balls_profits.md", timestamp=None):
         """更新/替换 README.md 中的推荐号码区块（无重复、无缩进代码块）。
         - 使用锚点 `<!-- BEGIN:recommendations -->` 与 `<!-- END:recommendations -->` 包裹内容；
         - 若锚点存在则原地替换；否则在第一个 H1 标题后插入；若找不到 H1，则追加到末尾；
