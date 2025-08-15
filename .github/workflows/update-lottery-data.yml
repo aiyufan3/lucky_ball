@@ -17,6 +17,8 @@ permissions:
 jobs:
   update-lottery-data:
     runs-on: ubuntu-latest
+    env:
+      HEARTBEAT: "true"   # 若希望仅在真实数据变化时提交，将其改为 "false"
     # 确保PR只在合并时运行，而不是简单关闭时运行
     if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
 
@@ -44,6 +46,9 @@ jobs:
         python -m pip install --upgrade pip
         pip install requests pandas numpy matplotlib seaborn beautifulsoup4 hjson DrissionPage
 
+        # 安装 CPU 版 PyTorch（避免 CUDA 依赖）
+        pip install torch --index-url https://download.pytorch.org/whl/cpu || true
+
         # DrissionPage 如需浏览器，请在需要时开启以下脚本（默认关闭以加快执行速度）
         # echo "安装Chrome浏览器..."
         # wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
@@ -56,14 +61,25 @@ jobs:
     - name: 运行彩票数据分析
       run: |
         echo "开始运行彩票数据分析..."
+        exit_code=0
         if [ -f "main.py" ]; then
-          python main.py || true
+          python main.py || exit_code=$?
         elif [ -f "lottery_analyzer.py" ]; then
-          python lottery_analyzer.py || true
+          python lottery_analyzer.py || exit_code=$?
         else
           echo "未找到 main.py 或 lottery_analyzer.py，跳过分析步骤"
         fi
-        echo "分析完成，继续到文件变更检查步骤..."
+
+        echo "分析完成，退出码: $exit_code"
+
+        # 可选：心跳文件，保证成功运行时也会有一次轻量变更，便于每日自动提交
+        if [ "$HEARTBEAT" = "true" ] && [ $exit_code -eq 0 ]; then
+          mkdir -p data
+          date -u +"%Y-%m-%dT%H:%M:%SZ" > data/.last_run_utc.txt
+          echo "已写入心跳文件 data/.last_run_utc.txt"
+        fi
+
+        echo "继续到文件变更检查步骤..."
 
     - name: 检查文件变更
       id: git-check
