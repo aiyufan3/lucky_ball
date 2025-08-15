@@ -103,6 +103,7 @@ jobs:
         [ -f ".github/.last_run_utc.txt" ] && TARGETS+=(".github/.last_run_utc.txt")
         [ -f "data/kl8_history.json" ] && TARGETS+=("data/kl8_history.json")
         [ -f "reports/kl8_analysis_report.md" ] && TARGETS+=("reports/kl8_analysis_report.md")
+        [ -f "reports/kl8_profit_plan.md" ] && TARGETS+=("reports/kl8_profit_plan.md")
         [ -f "pics/kl8_frequency_hist.png" ] && TARGETS+=("pics/kl8_frequency_hist.png")
         [ -f "pics/kl8_ema_heatmap.png" ] && TARGETS+=("pics/kl8_ema_heatmap.png")
         [ -f "pics/kl8_overlap_compare.png" ] && TARGETS+=("pics/kl8_overlap_compare.png")
@@ -153,7 +154,7 @@ jobs:
           exit 0
         fi
 
-        commit_message="🎯 更新彩票数据和分析报告 - $(TZ='Asia/Shanghai' date +'%Y-%m-%d %H:%M:%S') (UTC+8)"
+        commit_message="Update lottery data and analysis reports - $(TZ='Asia/Shanghai' date +'%Y-%m-%d %H:%M:%S') (UTC+8)"
         git commit -m "$commit_message"
         git push
         echo "文件提交成功"
