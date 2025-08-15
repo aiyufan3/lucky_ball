@@ -79,14 +79,28 @@ jobs:
           echo "changed=false" >> $GITHUB_OUTPUT
           exit 0
         fi
-        if git diff --exit-code "${TARGETS[@]}" > /dev/null 2>&1; then
+
+        CHANGED=false
+
+        # 1) 检测未跟踪(新)文件
+        UNTRACKED=$(git ls-files --others --exclude-standard -- "${TARGETS[@]}")
+        if [ -n "$UNTRACKED" ]; then
+          echo "发现未跟踪文件:"
+          echo "$UNTRACKED"
+          CHANGED=true
+        fi
+
+        # 2) 检测已跟踪文件的修改/删除
+        if ! git diff --exit-code -- "${TARGETS[@]}" >/dev/null 2>&1; then
+          echo "发现已跟踪文件修改/删除"
+          CHANGED=true
+        fi
+
+        if [ "$CHANGED" = true ]; then
+          echo "changed=true" >> $GITHUB_OUTPUT
+        else
           echo "没有检测到文件变更"
           echo "changed=false" >> $GITHUB_OUTPUT
-        else
-          echo "检测到文件变更"
-          echo "changed=true" >> $GITHUB_OUTPUT
-          echo "变更的文件:"
-          git diff --name-only "${TARGETS[@]}" || true
         fi
 
     - name: 提交更新
@@ -96,9 +110,9 @@ jobs:
         git config --local user.email "snjyor@gmail.com"
         git config --local user.name "snjyor"
 
-        [ -d "data" ] && git add data/ || echo "data 目录不存在"
-        [ -d "reports" ] && git add reports/ || echo "reports 目录不存在"
-        [ -d "pics" ] && git add pics/ || echo "pics 目录不存在"
+        [ -e "data" ] && git add -A data || echo "data 目录不存在"
+        [ -e "reports" ] && git add -A reports || echo "reports 目录不存在"
+        [ -e "pics" ] && git add -A pics || echo "pics 目录不存在"
 
         if git diff --cached --quiet; then
           echo "没有文件需要提交"
