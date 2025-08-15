@@ -11,6 +11,9 @@ on:
     branches: [ main ]  # PR合并到main分支时触发
     types: [ closed ]   # 只在PR关闭时触发
 
+permissions:
+  contents: write
+
 jobs:
   update-lottery-data:
     runs-on: ubuntu-latest
