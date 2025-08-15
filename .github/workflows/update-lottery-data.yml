@@ -62,6 +62,7 @@ jobs:
     - name: 运行数据抓取与分析 (双色球 + 快乐8)
       run: |
         echo "开始运行数据分析..."
+        mkdir -p data reports pics
         exit_code=0
 
         if [ -f "lottery_analyzer.py" ]; then
@@ -73,10 +74,10 @@ jobs:
 
         if [ -f "scripts/super_eight.py" ]; then
           echo "[KL8] 运行 scripts/super_eight.py ..."
-          python scripts/super_eight.py --fetch --limit 200 --recommend 5 --plots --plots_dual --report --seed 42 || exit_code=$?
+          python scripts/super_eight.py --fetch --limit 200 --recommend 5 --plots --plots_dual --report --plan --budget 22 --price_per_bet 2 --seed 42 || exit_code=$?
         elif [ -f "super_eight.py" ]; then
           echo "[KL8] 运行 super_eight.py ..."
-          python super_eight.py --fetch --limit 200 --recommend 5 --plots --plots_dual --report --seed 42 || exit_code=$?
+          python super_eight.py --fetch --limit 200 --recommend 5 --plots --plots_dual --report --plan --budget 22 --price_per_bet 2 --seed 42 || exit_code=$?
         else
           echo "[KL8] 未找到 super_eight.py，跳过"
         fi
@@ -141,8 +142,8 @@ jobs:
       if: steps.git-check.outputs.changed == 'true'
       run: |
         echo "准备提交文件变更..."
-        git config --local user.email "snjyor@gmail.com"
-        git config --local user.name "snjyor"
+        git config --local user.name "${{ github.actor }}"
+        git config --local user.email "${{ github.actor }}@users.noreply.github.com"
 
         [ -e "data" ] && git add -A data || echo "data 目录不存在"
         [ -e "reports" ] && git add -A reports || echo "reports 目录不存在"
@@ -166,60 +167,65 @@ jobs:
       run: |
         echo "准备创建发布版本..."
         TAG_NAME="$(TZ='Asia/Shanghai' date +'%Y%m%d')"
-        if ! git tag | grep -q "^$TAG_NAME$"; then
-          git tag $TAG_NAME
-          git push origin $TAG_NAME
 
-          NOTES=$'## 🎯 彩票数据更新 - '"$(TZ='Asia/Shanghai' date +'%Y年%m月%d日')"$' (UTC+8)\n\n'
-          NOTES+=$'### 📊 本次更新内容\n'
-          NOTES+=$'- 抓取最新开奖数据（双色球/快乐8）\n'
-          NOTES+=$'- 更新统计分析图表\n'
-          NOTES+=$'- 刷新号码频率与报告\n\n'
-          NOTES+=$'### 📁 更新文件\n'
-          NOTES+=$'**双色球数据：**\n'
-          NOTES+=$'- data/lottery_data.json - 双色球开奖数据\n'
-          NOTES+=$'- data/lottery_aggregated_data.hjson - 双色球聚合分析数据\n'
-          NOTES+=$'- reports/double_color_ball_analysis_report.md - 双色球分析报告\n'
-          NOTES+=$'- pics/lottery_frequency_analysis.png - 双色球频率图表\n\n'
-          NOTES+=$'**快乐8数据：**\n'
-          NOTES+=$'- data/kl8_history.json - 快乐8开奖数据\n'
-          NOTES+=$'- reports/kl8_analysis_report.md - 快乐8分析报告\n'
-          NOTES+=$'- pics/kl8_frequency_hist.png, pics/kl8_ema_heatmap.png, pics/kl8_overlap_compare.png, pics/kl8_dual_frequency_style.png\n\n'
-          NOTES+=$'### ⚠️ 免责声明\n'
-          NOTES+=$'本数据仅供学习和统计分析使用，彩票开奖完全随机，请理性购彩。\n'
+        # 先同步远端 tags，避免重复推送时报错
+        git fetch --tags --quiet || true
 
-          upload_files=""
-          [ -f "data/lottery_data.json" ] && upload_files="$upload_files data/lottery_data.json"
-          [ -f "data/lottery_aggregated_data.hjson" ] && upload_files="$upload_files data/lottery_aggregated_data.hjson"
-          [ -f "reports/analysis_report.md" ] && upload_files="$upload_files reports/analysis_report.md"
-          [ -f "pics/lottery_frequency_analysis.png" ] && upload_files="$upload_files pics/lottery_frequency_analysis.png"
+        if git ls-remote --tags origin | grep -q "refs/tags/$TAG_NAME$"; then
+          echo "Tag $TAG_NAME 已存在于远端，跳过创建发布版本"
+          exit 0
+        fi
 
-          # KL8 artifacts
-          [ -f "data/kl8_history.json" ] && upload_files="$upload_files data/kl8_history.json"
-          [ -f "reports/kl8_analysis_report.md" ] && upload_files="$upload_files reports/kl8_analysis_report.md"
-          [ -f "pics/kl8_frequency_hist.png" ] && upload_files="$upload_files pics/kl8_frequency_hist.png"
-          [ -f "pics/kl8_ema_heatmap.png" ] && upload_files="$upload_files pics/kl8_ema_heatmap.png"
-          [ -f "pics/kl8_overlap_compare.png" ] && upload_files="$upload_files pics/kl8_overlap_compare.png"
-          [ -f "pics/kl8_dual_frequency_style.png" ] && upload_files="$upload_files pics/kl8_dual_frequency_style.png"
+        git tag -f $TAG_NAME
+        git push -f origin $TAG_NAME
 
-          if command -v gh >/dev/null 2>&1; then
-            if [ -n "$upload_files" ]; then
-              gh release create $TAG_NAME \
-                --title "彩票数据更新 $TAG_NAME" \
-                --notes "$NOTES" \
-                $upload_files
-              echo "发布版本创建成功，包含文件: $upload_files"
-            else
-              gh release create $TAG_NAME \
-                --title "彩票数据更新 $TAG_NAME" \
-                --notes "$NOTES"
-              echo "发布版本创建成功，但没有数据文件可上传"
-            fi
+        NOTES=$'## 🎯 彩票数据更新 - '"$(TZ='Asia/Shanghai' date +'%Y年%m月%d日')"$' (UTC+8)\n\n'
+        NOTES+=$'### 📊 本次更新内容\n'
+        NOTES+=$'- 抓取最新开奖数据（双色球/快乐8）\n'
+        NOTES+=$'- 更新统计分析图表\n'
+        NOTES+=$'- 刷新号码频率与报告\n\n'
+        NOTES+=$'### 📁 更新文件\n'
+        NOTES+=$'**双色球数据：**\n'
+        NOTES+=$'- data/lottery_data.json - 双色球开奖数据\n'
+        NOTES+=$'- data/lottery_aggregated_data.hjson - 双色球聚合分析数据\n'
+        NOTES+=$'- reports/double_color_ball_analysis_report.md - 双色球分析报告\n'
+        NOTES+=$'- pics/lottery_frequency_analysis.png - 双色球频率图表\n\n'
+        NOTES+=$'**快乐8数据：**\n'
+        NOTES+=$'- data/kl8_history.json - 快乐8开奖数据\n'
+        NOTES+=$'- reports/kl8_analysis_report.md - 快乐8分析报告\n'
+        NOTES+=$'- pics/kl8_frequency_hist.png, pics/kl8_ema_heatmap.png, pics/kl8_overlap_compare.png, pics/kl8_dual_frequency_style.png\n\n'
+        NOTES+=$'### ⚠️ 免责声明\n'
+        NOTES+=$'本数据仅供学习和统计分析使用，彩票开奖完全随机，请理性购彩。\n'
+
+        upload_files=""
+        [ -f "data/lottery_data.json" ] && upload_files="$upload_files data/lottery_data.json"
+        [ -f "data/lottery_aggregated_data.hjson" ] && upload_files="$upload_files data/lottery_aggregated_data.hjson"
+        [ -f "reports/analysis_report.md" ] && upload_files="$upload_files reports/analysis_report.md"
+        [ -f "pics/lottery_frequency_analysis.png" ] && upload_files="$upload_files pics/lottery_frequency_analysis.png"
+
+        # KL8 artifacts
+        [ -f "data/kl8_history.json" ] && upload_files="$upload_files data/kl8_history.json"
+        [ -f "reports/kl8_analysis_report.md" ] && upload_files="$upload_files reports/kl8_analysis_report.md"
+        [ -f "pics/kl8_frequency_hist.png" ] && upload_files="$upload_files pics/kl8_frequency_hist.png"
+        [ -f "pics/kl8_ema_heatmap.png" ] && upload_files="$upload_files pics/kl8_ema_heatmap.png"
+        [ -f "pics/kl8_overlap_compare.png" ] && upload_files="$upload_files pics/kl8_overlap_compare.png"
+        [ -f "pics/kl8_dual_frequency_style.png" ] && upload_files="$upload_files pics/kl8_dual_frequency_style.png"
+
+        if command -v gh >/dev/null 2>&1; then
+          if [ -n "$upload_files" ]; then
+            gh release create $TAG_NAME \
+              --title "彩票数据更新 $TAG_NAME" \
+              --notes "$NOTES" \
+              $upload_files
+            echo "发布版本创建成功，包含文件: $upload_files"
           else
-            echo "⚠️ 未安装 gh CLI，跳过创建发布版本。"
+            gh release create $TAG_NAME \
+              --title "彩票数据更新 $TAG_NAME" \
+              --notes "$NOTES"
+            echo "发布版本创建成功，但没有数据文件可上传"
           fi
         else
-          echo "Tag $TAG_NAME 已存在，跳过创建发布版本"
+          echo "⚠️ 未安装 gh CLI，跳过创建发布版本。"
         fi
 
     - name: 输出结果
