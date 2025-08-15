@@ -1,170 +1,259 @@
-# Lottery Data Analysis System | 彩票数据分析系统
+# Lucky Ball — Lottery Data Analysis System (SSQ & KL8)
+
+> **CN**：基于 Python 的「双色球 & 快乐8」数据抓取、统计分析、可视化、机器学习推荐与回测系统。**仅供技术学习与数据研究，不构成任何投注建议。**
+>
+> **EN**: A Python toolkit for data fetching, statistical analysis, visualization, ML‑based recommendations and backtesting for **Double Chromosphere (SSQ)** and **Keno / Happy 8 (KL8)**. **For research/education only.**
 
 ---
 
-## Project Introduction | 项目介绍
-
-Welcome to the **Lottery Data Analysis System**, a comprehensive tool designed for analyzing and predicting lottery draws with a focus on **Double Chromosphere (双色球)** and **Happy 8 (快乐8)** games.  
-欢迎使用**彩票数据分析系统**，这是一个专注于**双色球**和**快乐8**彩票的综合分析与预测工具。
-
-This system integrates advanced statistical analysis, machine learning models (LSTM, ARIMA), Monte Carlo simulations, and entropy minimization techniques to provide intelligent number recommendations and detailed insights.  
-本系统结合先进的统计分析、机器学习模型（LSTM、ARIMA）、蒙特卡洛模拟及熵最小化技术，提供智能选号推荐及详细数据洞察。
-
----
-
-## Today’s Recommendations | 今日推荐号码
-
-**Recommendations are based on historical data analysis and do not guarantee winnings. Please play responsibly!**  
-**以下推荐号码基于历史数据分析，仅供参考，不保证中奖！请理性购彩！**
-
-| Game | Recommendation # | Red Balls / Numbers | Blue Ball / Extra | Notes / Features                                  |
-|-------|------------------|---------------------|-------------------|--------------------------------------------------|
-| **Double Chromosphere (双色球)** | 1                | 02 06 14 16 31 33   | 06                | LSTM+ARIMA+MonteCarlo low entropy | 2 odd, 4 even | Sum:102 | Span:31 |
-| **Double Chromosphere (双色球)** | 2                | 02 06 10 14 20 23   | 05                | LSTM+ARIMA+MonteCarlo low entropy | 1 odd, 5 even | Sum:75  | Span:21 |
-| **Double Chromosphere (双色球)** | 3                | 06 10 14 15 28 31   | 12                | LSTM+ARIMA+MonteCarlo low entropy | 2 odd, 4 even | Sum:104 | Span:25 |
-| **Double Chromosphere (双色球)** | 4                | 02 06 08 14 15 26   | 06                | LSTM+ARIMA+MonteCarlo low entropy | 1 odd, 5 even | Sum:71  | Span:24 |
-| **Double Chromosphere (双色球)** | 5                | 02 06 10 13 22 31   | 11                | LSTM+ARIMA+MonteCarlo low entropy | 2 odd, 4 even | Sum:84  | Span:29 |
-| **Happy 8 (快乐8)**              | 1                | 03 07 12 18 22 27 31 35 | -                 | Monte Carlo simulation with entropy minimization |
-| **Happy 8 (快乐8)**              | 2                | 01 05 09 14 20 25 29 33 | -                 | Hot/cold number trend analysis                     |
-| **Happy 8 (快乐8)**              | 3                | 04 08 13 17 21 26 30 34 | -                 | LSTM-based prediction with ARIMA trend forecasting |
+## Table of Contents
+- [Highlights](#highlights)
+- [Project Structure](#project-structure)
+- [Quickstart](#quickstart)
+- [Data Pipelines](#data-pipelines)
+  - [SSQ: Double Color Ball](#ssq-double-color-ball)
+  - [KL8: Happy 8 / Keno](#kl8-happy-8--keno)
+- [Backtesting & Metrics](#backtesting--metrics)
+- [Generated Artifacts](#generated-artifacts)
+- [Automation (GitHub Actions)](#automation-github-actions)
+- [Configuration](#configuration)
+- [Troubleshooting & FAQ](#troubleshooting--faq)
+- [Contribution](#contribution)
+- [License & Legal Notice](#license--legal-notice)
+- [Acknowledgements](#acknowledgements)
 
 ---
 
-## Features | 功能特性
+## Highlights
 
-| English Description                                    | 中文描述                                         |
-|--------------------------------------------------------|------------------------------------------------|
-| Automatic daily data fetching                           | 自动每日抓取最新开奖数据                         |
-| Multi-dimensional statistical analysis                 | 多维度统计分析（频率、奇偶、和值、跨度等）        |
-| Trend and hot/cold number analysis                      | 趋势分析及冷热号码识别                          |
-| Intelligent recommendation algorithms                   | 智能号码推荐算法                                |
-| Visualization charts for frequency and trends          | 频率与趋势可视化图表                            |
-| Auto-generated detailed Markdown analysis reports       | 自动生成详细的 Markdown 分析报告                  |
-| Machine learning models: LSTM, ARIMA, entropy minimization | 机器学习模型：LSTM、ARIMA、熵最小化              |
-| Monte Carlo simulation for strategy evaluation          | 蒙特卡洛模拟策略评估                            |
-| Rolling backtesting with Hit@k and blue-ball hit rate   | 滚动回测，输出 Hit@k 和蓝球命中率指标            |
-| Strict ML training mode for robust evaluation           | 严格模式训练，确保模型评估的鲁棒性                |
-| Support for both Double Chromosphere and Happy 8 games  | 同时支持双色球与快乐8彩票分析与推荐                |
-| Scheduled automation with GitHub Actions                 | GitHub Actions 定时自动化运行                    |
+| Feature | Description |
+|---|---|
+| **Daily auto-fetch** | Pulls latest draws from the official China Welfare Lottery API. |
+| **Rich statistics** | Frequency / hot–cold trends, odd–even mix, sums, span distributions, weekday conditioning. |
+| **Visualization** | Frequency histograms, EMA heatmaps, dual-section frequency chart style for KL8. |
+| **ML‑assisted SSQ** | LSTM models for red/blue, **three‑way fused prior** (short window / weekday / global), temperature smoothing, ARIMA sum constraints + Monte Carlo low‑entropy selection. |
+| **Backtesting** | Rolling evaluation; **Hit@k (Recall@k)** for red, **Top‑k hit rate** for blue; baseline vs ML. |
+| **Budget demo (KL8)** | Example **profit plan** generator to allocate a budget across recommended sets (learning purpose). |
+| **Automation** | One‑click GitHub Actions for scheduled updates, auto‑commit, tagged release with plots & reports. |
+
+> ⚠️ **Disclaimer**: Lottery draws are random. Historical data cannot predict future outcomes. This project is strictly for learning & research.
 
 ---
 
-## Installation & Usage | 安装与使用
+## Project Structure
 
-### Local Setup | 本地安装
-
-1. Clone the repository | 克隆仓库  
-   ```bash
-   git clone https://github.com/your-username/lucky_ball.git
-   cd lucky_ball
-   ```
-2. Install dependencies | 安装依赖  
-   ```bash
-   pip install -r requirements.txt
-   ```
-3. Run analysis | 运行分析  
-   ```bash
-   python lottery_analyzer.py
-   ```
-
-### Backtesting & ML Evaluation | 回测与机器学习评估
-
-Run rolling backtest to evaluate ML and baseline models:  
-运行滚动回测，评估机器学习模型与基线模型：
-
-```bash
-python backtest.py --model lstm --window 50 --recommend 5 --strict
+```
+.
+├── .github/workflows/update-lottery-data.yml   # CI: scheduled fetch + analysis + release
+├── data/
+│   ├── lottery_data.json                       # SSQ history (auto)
+│   ├── kl8_history.json                        # KL8 history (auto)
+│   └── payouts_kl8.json                        # KL8 payout template (optional)
+├── pics/                                       # Exported charts (auto)
+│   ├── kl8_frequency_hist.png
+│   ├── kl8_ema_heatmap.png
+│   └── kl8_dual_frequency_style.png
+├── reports/
+│   ├── double_color_ball_analysis_report.md    # SSQ analysis (auto)
+│   ├── kl8_analysis_report.md                  # KL8 analysis (auto)
+│   └── kl8_profit_plan.md                      # KL8 budget demo (auto when enabled)
+├── backtest.py                                 # SSQ rolling backtest
+├── lottery_analyzer.py                         # SSQ data/ML/plots/reports
+└── super_eight.py                              # KL8 data/plots/recommendations/plan
 ```
 
-- `--model lstm`: Use LSTM-based machine learning model | 使用基于 LSTM 的机器学习模型  
-- `--window 50`: Rolling window size | 滚动窗口大小  
-- `--recommend 5`: Number of recommendation sets per period | 每期推荐组数  
-- `--strict`: Enable strict training mode (train only on past data) | 启用严格训练模式（仅用历史数据训练）
+---
 
-Results include Hit@k and blue-ball hit rate for both ML and baseline strategies.  
-结果包含机器学习和基线策略的 Hit@k 及蓝球命中率指标。
+## Quickstart
+
+### 1) Environment
+- Python **3.11+** recommended (better deps & SSL on macOS)
+- `pip install -r requirements.txt`
+
+### 2) Run SSQ end‑to‑end
+```bash
+python lottery_analyzer.py
+```
+This will **fetch data**, train LSTM (if enough data), generate **recommendations**, create **plots**, write **reports/HJSON**, and update the recommendations block (see below).
+
+### 3) Run KL8 end‑to‑end (examples)
+```bash
+# Fetch recent 30 draws and write data/kl8_history.json
+python super_eight.py --fetch --limit 30 --report --plots --plots_dual --seed 42
+
+# Generate 5 recommendation sets + budget plan (¥22 at ¥2 each), with plots
+python super_eight.py \
+  --fetch --limit 30 \
+  --recommend 5 \
+  --plan --budget 22 --price_per_bet 2 \
+  --plots --plots_dual --split 40 \
+  --report --seed 42
+```
+
+> The KL8 script supports **frequency + EMA trend fusion**, quadrant coverage, and odd–even balance constraints. Charts are saved under `pics/` and the report under `reports/`.
 
 ---
 
-## Automation with GitHub Actions | GitHub Actions 自动化
+## Data Pipelines
 
-This project supports automated data fetching, analysis, and report generation via GitHub Actions:  
-本项目通过 GitHub Actions 实现自动数据抓取、分析及报告生成：
+### SSQ: Double Color Ball
+File: `lottery_analyzer.py`
 
-| Automation Type      | Description                                     | 说明                                               |
-|----------------------|-------------------------------------------------|----------------------------------------------------|
-| Scheduled Runs    | Daily at 23:00 (UTC+8) fetch latest data       | 每天晚上23:00（UTC+8）自动抓取最新开奖数据          |
-| Manual Trigger    | Trigger runs manually via GitHub Actions page  | 可在 GitHub Actions 页面手动触发运行                |
-| Auto Commit       | Automatically commit updated data files         | 自动提交更新后的数据文件                             |
-| Release Creation | Create releases with data on daily updates      | 每日数据更新时自动创建包含数据文件的 Release         |
+- **Fetching**: robust pagination, rotating User‑Agents, retries; saves to `data/lottery_data.json`.
+- **Statistics**:
+  - Frequency (red 1–33, blue 1–16)
+  - Odd–even mix, sum buckets, span buckets
+  - Weekday‑conditional priors with shrinkage (tunable `SHRINK_BETA_WEEKDAY`)
+- **ML Models**:
+  - Two **LSTM** predictors (red: multi‑label; blue: single‑label)
+  - Engineered features: sums, span, odd/even ratios, cyclical weekday encoding
+  - Temperature smoothing (`TAU_RED`, `TAU_BLUE`) to avoid over‑confidence
+  - **Three‑way fused prior**: short‑window / weekday / global (weights `FUSION_L1_SHORT`, `FUSION_L2_WEEKDAY`)
+  - **ARIMA** forecast on red‑sum → range constraint
+  - **Monte Carlo** low‑entropy combination sampling (no‑replacement)
+- **Outputs**:
+  - `reports/double_color_ball_analysis_report.md`
+  - `data/lottery_aggregated_data.hjson` (with rich comments)
+  - `pics/lottery_frequency_analysis.png`
 
-Modify scheduling by editing `.github/workflows/update-lottery-data.yml`.  
-可通过编辑 `.github/workflows/update-lottery-data.yml` 修改定时任务。
+#### Update recommendations block (auto)
+The analyzer can update a Markdown block bracketed by anchors. Add this block to any doc you want auto‑updated:
 
----
+```
+<!-- BEGIN:recommendations -->
+## 🎯 今日推荐号码 / Today’s Recommendations
 
-## Data Source | 数据来源
+**⚠️ 以下推荐号码基于历史统计分析，仅供参考，不保证中奖！**
 
-Official China Welfare Lottery API powers the data:  
-数据来源于中国福利彩票官方网站 API：
+*(This section will be updated by the automation run.)*
+<!-- END:recommendations -->
+```
 
-- **API URL**: `https://www.cwl.gov.cn/cwl_admin/front/cwlkj/search/kjxx/findDrawNotice`  
-- **Format**: JSON  
-- **Update Frequency**: After draws on Tuesday, Thursday, and Sunday  
-
----
-
-## Contribution | 贡献指南
-
-Contributions are warmly welcomed! Please follow the standard GitHub workflow:  
-欢迎贡献！请遵循标准 GitHub 工作流程：
-
-1. Fork the repository | Fork 仓库  
-2. Create a feature branch (`git checkout -b feature/AmazingFeature`) | 创建特性分支  
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`) | 提交更改  
-4. Push to the branch (`git push origin feature/AmazingFeature`) | 推送分支  
-5. Open a Pull Request | 创建 Pull Request  
+> If you prefer updating **README.md**, call `update_readme_recommendations(readme_path="README.md")` in your workflow/script.
 
 ---
 
-## License & Legal Notice | 许可与法律声明
+### KL8: Happy 8 / Keno
+File: `super_eight.py`
 
-This project is licensed under the [MIT License](LICENSE).  
-本项目基于 [MIT License](LICENSE) 开源协议。
+- **Fetch**: `--fetch [--limit N]` uses the unified official API (`name=kl8`). Saves `data/kl8_history.json`.
+- **Recommend**: `--recommend K` generates K sets of 20 numbers via **frequency + EMA trend** weights with quadrant & odd/even constraints.
+- **Plots**: `--plots` (full histogram), `--plots_dual` (1–40 / 41–80 split), `--split` to set the split point.
+- **Report**: `--report` writes `reports/kl8_analysis_report.md` (hot/cold tables, latest draw, optional backtest summary).
+- **Plan (demo)**: `--plan --budget X --price_per_bet Y` writes `reports/kl8_profit_plan.md` with a simple proportional allocation over recommended sets (**learning purpose**). If you provide a payouts JSON, the script exposes EV/Kelly helpers to extend to analytical EV allocation.
 
----
+Common one‑liners:
+```bash
+# Only fetch the freshest N draws
+python super_eight.py --fetch --limit 50
 
-### Important Disclaimer | 重要免责声明
+# Recommendations + plots + report
+python super_eight.py --fetch --limit 50 --recommend 5 --plots --plots_dual --report
 
-- This project is for **technical learning and data analysis research purposes only**.  
-  本项目仅用于技术学习和数据分析研究目的。  
-- Lottery results are completely random; historical data cannot predict future outcomes.  
-  彩票开奖结果完全随机，历史数据无法预测未来结果。  
-- Analysis is for reference only and does not constitute betting advice.  
-  本分析结果仅供参考，不构成任何投注建议。  
-- Please gamble responsibly and within your means; minors under 18 are prohibited from purchasing lottery tickets.  
-  请理性购彩，量力而行，未满18周岁禁止购买彩票。  
-- The developer is not responsible for any losses arising from use of this software.  
-  开发者不承担因使用本软件产生的任何损失。  
-- Machine learning models do not guarantee prediction accuracy.  
-  机器学习模型的引入并不保证预测准确率。  
-- This project complies strictly with all relevant laws and regulations and does not encourage gambling.  
-  本项目严格遵守相关法律法规，不鼓励任何形式的赌博行为。  
-- Any illegal use is at your own risk.  
-  如有违法违规使用，后果自负。  
+# Budget demo plan
+python super_eight.py --fetch --limit 30 --recommend 6 --plan --budget 36 --price_per_bet 2
+```
 
 ---
 
-## Acknowledgements | 致谢
+## Backtesting & Metrics
 
-- Original author: [snjyor](https://github.com/snjyor)  
-  原作者：[snjyor](https://github.com/snjyor)  
-- Official China Welfare Lottery for open data support  
-  感谢中国福利彩票官方提供的开放数据  
-- All open source contributors and libraries used in this project  
-  感谢所有开源贡献者及所使用的开源库  
+### SSQ rolling backtest (`backtest.py`)
+**Protocol**: train on data up to time *t* → predict *t+1* → compare with truth. Baselines use time‑decayed marginals; ML uses LSTM‑assisted probabilities fused with priors.
+
+**Key metrics**
+- **Red Hit@k (Recall@k)**: fraction of the 6 true red balls captured in the top‑k probabilities, averaged over periods.
+- **Blue Top‑k hit rate**: whether the true blue is within top‑k.
+- Variants compared: `BASE_global`, `BASE_weekday`, `BASE_short`, `BASE_long`, `BASE_mix_β`, `ML_auto`, `ML_fixed`.
+
+**Examples**
+```bash
+python backtest.py \
+  --start 2015-01-01 \
+  --seq-len 10 --epochs 3 --hidden-size 64 --lr 1e-3 \
+  --k 6 10 12 16 --blue-k 1 2 3 4 \
+  --half-life 60 --alpha-fixed 0.40 \
+  --short-win 30 --long-win 180 --mix-betas 0.2 0.35 0.5
+
+# Baseline only
+python backtest.py --no-ml --k 6 10 12 --blue-k 1 2 --half-life 60
+```
+The script prints compact tables for red/blue across variants and k.
 
 ---
 
-**Remember: Lottery is risky, gamble with caution! Play responsibly, live happily!**  
-**记住：彩票有风险，投注需谨慎！理性购彩，快乐生活！**
+## Generated Artifacts
+- **Data**: `data/lottery_data.json`, `data/kl8_history.json`
+- **Reports**:
+  - `reports/double_color_ball_analysis_report.md`
+  - `reports/kl8_analysis_report.md`
+  - `reports/kl8_profit_plan.md` (when `--plan` is used)
+- **Charts**: `pics/kl8_frequency_hist.png`, `pics/kl8_ema_heatmap.png`, `pics/kl8_dual_frequency_style.png`, `pics/lottery_frequency_analysis.png`
+- **Aggregates**: `data/lottery_aggregated_data.hjson`
+
+> Release assets produced by CI will include updated **data**, **plots**, and **reports**.
+
+---
+
+## Automation (GitHub Actions)
+This repo includes a workflow that can run **daily (UTC+8 23:00)** and on manual dispatch.
+
+**What it does**
+1. Fetch SSQ & KL8 latest data
+2. Generate reports & plots
+3. Commit changes and (optionally) create/update a date‑tagged release
+
+**Author/Commit identity**
+The workflow is configured to author commits as the **triggering user** with GitHub noreply email:
+```bash
+git config --local user.name "${{ github.actor }}"
+git config --local user.email "${{ github.actor }}@users.noreply.github.com"
+```
+
+**Tagging**
+The release step checks for an existing tag and **skips** creation if it already exists to avoid failures.
+
+> If you want to use a public email, add a secret like `COMMIT_EMAIL` and set `user.email` accordingly.
+
+---
+
+## Configuration
+Tunable knobs (see in‑code defaults):
+
+- **SSQ priors & fusion**: `FUSION_L1_SHORT`, `FUSION_L2_WEEKDAY`, `SHORT_WINDOW`, `SHRINK_BETA_WEEKDAY`
+- **Smoothing**: `TAU_RED`, `TAU_BLUE`
+- **Backtest**: `--half-life`, `--short-win`, `--long-win`, `--mix-betas`, `--alpha-fixed`
+- **KL8**: EMA `alpha`, plot `--split`, plan `--budget/--price_per_bet`
+
+---
+
+## Troubleshooting & FAQ
+- **Plots show garbled Chinese**: Install a CJK font (e.g., *Noto Sans CJK SC*) or ensure one of the fallback fonts is available. The scripts set cross‑platform fallbacks.
+- **Network / API throttling**: The fetchers use retries and UA rotation. If repeated failures occur, wait and rerun.
+- **macOS SSL warnings**: Prefer Python **3.11+**.
+- **Where are my files?**: See [Generated Artifacts](#generated-artifacts). CI artifacts and release assets will mirror these paths.
+
+---
+
+## Contribution
+PRs & issues are welcome! Typical flow:
+1. Fork → branch → commit → PR
+2. Please include a brief description and, when applicable, screenshots of plots or snippets of report diffs.
+
+---
+
+## License & Legal Notice
+This project is released under the **MIT License**. See [LICENSE](LICENSE).
+
+**Important**
+- This repository is for **technical learning and data analysis** only.
+- Lottery results are **random**; historical data **cannot** predict the future.
+- The authors are **not responsible** for any losses caused by using this code.
+- **18+ only**; follow your local laws & regulations.
+
+---
+
+## Acknowledgements
+- Original author: [snjyor](https://github.com/snjyor)
+- China Welfare Lottery for open data endpoints
+- All open‑source libraries used by this project
