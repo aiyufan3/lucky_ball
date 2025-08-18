@@ -62,14 +62,21 @@ jobs:
     - name: 运行数据抓取与分析 (双色球 + 快乐8)
       run: |
         echo "开始运行数据分析..."
+        export MPLBACKEND=Agg
         mkdir -p data reports pics
         exit_code=0
 
-        if [ -f "lottery_analyzer.py" ]; then
+        if [ -f "main.py" ]; then
+          echo "[SSQ] 运行 main.py ..."
+          python main.py || exit_code=$?
+        elif [ -f "scripts/lottery_analyzer.py" ]; then
+          echo "[SSQ] 运行 scripts/lottery_analyzer.py ..."
+          python scripts/lottery_analyzer.py || exit_code=$?
+        elif [ -f "lottery_analyzer.py" ]; then
           echo "[SSQ] 运行 lottery_analyzer.py ..."
           python lottery_analyzer.py || exit_code=$?
         else
-          echo "[SSQ] 未找到 lottery_analyzer.py，跳过"
+          echo "[SSQ] 未找到入口 (main.py 或 lottery_analyzer.py)，跳过"
         fi
 
         if [ -f "scripts/super_eight.py" ]; then
@@ -109,6 +116,8 @@ jobs:
         [ -f "pics/kl8_ema_heatmap.png" ] && TARGETS+=("pics/kl8_ema_heatmap.png")
         [ -f "pics/kl8_overlap_compare.png" ] && TARGETS+=("pics/kl8_overlap_compare.png")
         [ -f "pics/kl8_dual_frequency_style.png" ] && TARGETS+=("pics/kl8_dual_frequency_style.png")
+        [ -f "reports/colorballs_analysis_report.md" ] && TARGETS+=("reports/colorballs_analysis_report.md")
+        [ -f "pics/lottery_frequency_analysis.png" ] && TARGETS+=("pics/lottery_frequency_analysis.png")
         if [ ${#TARGETS[@]} -eq 0 ]; then
           echo "未找到 data/ reports/ pics/ 目录或文件，视为无变化"
           echo "changed=false" >> $GITHUB_OUTPUT
@@ -188,7 +197,7 @@ jobs:
         NOTES+=$'**双色球数据：**\n'
         NOTES+=$'- data/lottery_data.json - 双色球开奖数据\n'
         NOTES+=$'- data/lottery_aggregated_data.hjson - 双色球聚合分析数据\n'
-        NOTES+=$'- reports/double_color_ball_analysis_report.md - 双色球分析报告\n'
+        # NOTES+=$'- reports/colorballs_analysis_report.md - 双色球分析报告\n'
         NOTES+=$'- pics/lottery_frequency_analysis.png - 双色球频率图表\n\n'
         NOTES+=$'**快乐8数据：**\n'
         NOTES+=$'- data/kl8_history.json - 快乐8开奖数据\n'
@@ -200,7 +209,8 @@ jobs:
         upload_files=""
         [ -f "data/lottery_data.json" ] && upload_files="$upload_files data/lottery_data.json"
         [ -f "data/lottery_aggregated_data.hjson" ] && upload_files="$upload_files data/lottery_aggregated_data.hjson"
-        [ -f "reports/analysis_report.md" ] && upload_files="$upload_files reports/analysis_report.md"
+        # SSQ reports (support both names)
+        [ -f "reports/colorballs_analysis_report.md" ] && upload_files="$upload_files reports/colorballs_analysis_report.md"
         [ -f "pics/lottery_frequency_analysis.png" ] && upload_files="$upload_files pics/lottery_frequency_analysis.png"
 
         # KL8 artifacts
@@ -234,8 +244,10 @@ jobs:
           echo "✅ 彩票数据已更新并提交 - $(TZ='Asia/Shanghai' date +'%Y-%m-%d %H:%M:%S') (UTC+8)"
           echo "📁 更新的文件:"
           [ -f "data/lottery_data.json" ] && echo "  ✓ 双色球开奖数据"
-          [ -f "reports/analysis_report.md" ] && echo "  ✓ 双色球分析报告"
-          [ -f "pics/lottery_frequency_analysis.png" ] && echo "  ✓ 双色球频率图表"
+          elif [ -f "reports/colorballs_analysis_report.md" ]; then
+            echo "  ✓ 双色球分析报告 (colorballs_analysis_report.md)"
+          fi
+          [ -f "pics/lottery_frequency_analysis.png" ] && echo "  ✓ 双色球频率图表 (lottery_frequency_analysis.png)"
           [ -f ".github/.last_run_utc.txt" ] && echo "  ✓ 心跳文件 (.github/.last_run_utc.txt)"
         else
           echo "ℹ️ 彩票数据无变化，跳过提交 - $(TZ='Asia/Shanghai' date +'%Y-%m-%d %H:%M:%S') (UTC+8)"
