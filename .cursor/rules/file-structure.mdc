@@ -49,7 +49,7 @@ lucky_ball/
 - [super_lotto_data.json](mdc:data/super_lotto_data.json) - 大乐透历史开奖数据（957KB，约2700期）
 
 #### `reports/` - 分析报告文档
-- [analysis_report.md](mdc:reports/analysis_report.md) - 双色球数据分析报告
+- [colorballs_analysis_report.md](mdc:reports/colorballs_analysis_report.md) - 双色球数据分析报告
 - [super_lotto_analysis_report.md](mdc:reports/super_lotto_analysis_report.md) - 大乐透数据分析报告
 
 #### `pics/` - 可视化图表
@@ -95,7 +95,7 @@ lucky_ball/
    - `data/super_lotto_data.json`
 
 2. **分析报告**（随数据更新同步生成）
-   - `reports/analysis_report.md`
+   - `reports/colorballs_analysis_report.md`
    - `reports/super_lotto_analysis_report.md`
 
 3. **可视化图表**（随分析完成自动生成）
