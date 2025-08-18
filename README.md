@@ -54,7 +54,7 @@
 │   ├── kl8_ema_heatmap.png
 │   └── kl8_dual_frequency_style.png
 ├── reports/
-│   ├── double_color_ball_analysis_report.md    # SSQ analysis (auto)
+│   ├── colorballs_analysis_report.md    # SSQ analysis (auto)
 │   ├── kl8_analysis_report.md                  # KL8 analysis (auto)
 │   └── kl8_profit_plan.md                      # KL8 budget demo (auto when enabled)
 ├── backtest.py                                 # SSQ rolling backtest
@@ -112,7 +112,7 @@ File: `lottery_analyzer.py`
   - **ARIMA** forecast on red‑sum → range constraint
   - **Monte Carlo** low‑entropy combination sampling (no‑replacement)
 - **Outputs**:
-  - `reports/double_color_ball_analysis_report.md`
+  - `reports/colorballs_analysis_report.md`
   - `data/lottery_aggregated_data.hjson` (with rich comments)
   - `pics/lottery_frequency_analysis.png`
 
@@ -185,7 +185,7 @@ The script prints compact tables for red/blue across variants and k.
 ## Generated Artifacts
 - **Data**: `data/lottery_data.json`, `data/kl8_history.json`
 - **Reports**:
-  - `reports/double_color_ball_analysis_report.md`
+  - `reports/colorballs_analysis_report.md`
   - `reports/kl8_analysis_report.md`
   - `reports/kl8_profit_plan.md` (when `--plan` is used)
 - **Charts**: `pics/kl8_frequency_hist.png`, `pics/kl8_ema_heatmap.png`, `pics/kl8_dual_frequency_style.png`, `pics/lottery_frequency_analysis.png`

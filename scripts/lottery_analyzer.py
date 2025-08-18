@@ -1202,7 +1202,7 @@ class DoubleColorBallAnalyzer:
         """
         print(rules)
     
-    def generate_analysis_report(self, filename="reports/double_color_ball_analysis_report.md"):
+    def generate_analysis_report(self, filename="reports/color_ball_analysis_report.md"):
         """生成完整的分析报告文件"""
         print(f"正在生成分析报告: {filename}")
         
