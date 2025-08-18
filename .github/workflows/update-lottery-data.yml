@@ -100,7 +100,7 @@ jobs:
         echo "继续到文件变更检查步骤..."
 
     - name: 检查文件变更
-      id: git-check
+      id: check_changes
       run: |
         echo "检查文件变更..."
         # 仅在这些目录/文件存在时再比较
@@ -143,12 +143,11 @@ jobs:
         if [ "$CHANGED" = true ]; then
           echo "changed=true" >> $GITHUB_OUTPUT
         else
-          echo "没有检测到文件变更"
           echo "changed=false" >> $GITHUB_OUTPUT
         fi
 
     - name: 提交更新
-      if: steps.git-check.outputs.changed == 'true'
+      if: steps.check_changes.outputs.changed == 'true'
       run: |
         echo "准备提交文件变更..."
         git config --local user.name "${{ github.actor }}"
@@ -170,7 +169,7 @@ jobs:
         echo "文件提交成功"
 
     - name: 创建重大更新的发布版本
-      if: steps.git-check.outputs.changed == 'true'
+      if: steps.check_changes.outputs.changed == 'true'
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
@@ -240,13 +239,11 @@ jobs:
 
     - name: 输出结果
       run: |
-        if [ "${{ steps.git-check.outputs.changed }}" == "true" ]; then
+        if [ "${{ steps.check_changes.outputs.changed }}" == "true" ]; then
           echo "✅ 彩票数据已更新并提交 - $(TZ='Asia/Shanghai' date +'%Y-%m-%d %H:%M:%S') (UTC+8)"
           echo "📁 更新的文件:"
           [ -f "data/lottery_data.json" ] && echo "  ✓ 双色球开奖数据"
-          elif [ -f "reports/colorballs_analysis_report.md" ]; then
-            echo "  ✓ 双色球分析报告 (colorballs_analysis_report.md)"
-          fi
+          [ -f "reports/colorballs_analysis_report.md" ] && echo "  ✓ 双色球分析报告 (colorballs_analysis_report.md)"
           [ -f "pics/lottery_frequency_analysis.png" ] && echo "  ✓ 双色球频率图表 (lottery_frequency_analysis.png)"
           [ -f ".github/.last_run_utc.txt" ] && echo "  ✓ 心跳文件 (.github/.last_run_utc.txt)"
         else
