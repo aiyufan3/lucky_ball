@@ -64,8 +64,9 @@ def filter_by_start_date(records, start_date_str=None):
         start = datetime.strptime(start_date_str, "%Y-%m-%d").date()
     except Exception:
         return records
-    out = [r for r in records if datetime.strptime(
-        r["date"], "%Y-%m-%d").date() >= start]
+    out = [
+        r for r in records if datetime.strptime(r["date"], "%Y-%m-%d").date() >= start
+    ]
     return out
 
 
@@ -97,7 +98,7 @@ def _baseline_probs(
     # 按日期升序
     recs = sort_records_asc(train_records)
     if window is not None and window > 0:
-        recs = recs[-int(window):]
+        recs = recs[-int(window) :]
     tmp = DoubleColorBallAnalyzer()
     tmp.lottery_data = list(recs)
     pr, pb = tmp.compute_marginal_probs(
@@ -202,7 +203,8 @@ def roll_once(
         blend_alpha="auto", decay_half_life=DEFAULT_DECAY_HALF_LIFE
     )
     ml_fixed_red, ml_fixed_blue = analyzer.predict_next_probabilities(
-        blend_alpha=DEFAULT_ALPHA_FIXED, decay_half_life=DEFAULT_DECAY_HALF_LIFE)
+        blend_alpha=DEFAULT_ALPHA_FIXED, decay_half_life=DEFAULT_DECAY_HALF_LIFE
+    )
 
     out = {
         "ML_auto": (ml_auto_red, ml_auto_blue),
@@ -257,10 +259,7 @@ def backtest(
 
         for name, (p_red, p_blue) in prob_map.items():
             for k in k_list:
-                red_hits[name][k].append(
-                    hit_at_k_red(
-                        p_red, true_reds, min(
-                            k, 33)))
+                red_hits[name][k].append(hit_at_k_red(p_red, true_reds, min(k, 33)))
             for bk in blue_k_list:
                 blue_hits[name][bk].append(
                     blue_hit_at_k(p_blue, true_blue, min(bk, 16))
@@ -268,14 +267,11 @@ def backtest(
 
     # 汇总
     def avg(d):
-        return {k: (float(np.mean(v)) if len(v) else 0.0)
-                for k, v in d.items()}
+        return {k: (float(np.mean(v)) if len(v) else 0.0) for k, v in d.items()}
 
     summary = {"N_eval": len(recs) - 1 - seq_len}
-    summary.update({f"red_{name}": avg(series)
-                   for name, series in red_hits.items()})
-    summary.update({f"blue_{name}": avg(series)
-                   for name, series in blue_hits.items()})
+    summary.update({f"red_{name}": avg(series) for name, series in red_hits.items()})
+    summary.update({f"blue_{name}": avg(series) for name, series in blue_hits.items()})
     return summary
 
 

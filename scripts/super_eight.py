@@ -25,7 +25,6 @@ python scripts/super_eight.py \
 如果需要生成图表，请自行在项目中添加可视化模块（例如 matplotlib）并扩展本脚本。
 """
 from __future__ import annotations
-import matplotlib.pyplot as plt
 
 import argparse
 import collections
@@ -41,6 +40,7 @@ from math import comb
 from statistics import mean, median
 from typing import Dict, List, Tuple
 
+import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 
 # 尝试导入 numpy，若失败则允许无 numpy 环境运行
@@ -75,9 +75,8 @@ DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 os.makedirs(DATA_DIR, exist_ok=True)
 DATA_FILE = os.path.join(DATA_DIR, "kl8_history.json")
 REPORT_FILE = os.path.join(
-    os.path.dirname(
-        os.path.dirname(__file__)),
-    "reports/kl8_analysis_report.md")
+    os.path.dirname(os.path.dirname(__file__)), "reports/kl8_analysis_report.md"
+)
 
 PLOTS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "pics")
 os.makedirs(PLOTS_DIR, exist_ok=True)
@@ -94,9 +93,7 @@ HEADERS = {
 # ----------------------------- 数据抓取 ----------------------------- #
 
 
-def fetch_kl8_history(
-        limit: int | None = None,
-        sleep_sec: float = 0.1) -> List[dict]:
+def fetch_kl8_history(limit: int | None = None, sleep_sec: float = 0.1) -> List[dict]:
     """从官方接口增量抓取快乐8历史数据。
 
     Args:
@@ -248,10 +245,7 @@ def rolling_ema(freq_series: List[int], alpha: float = 0.2) -> List[float]:
     return ema
 
 
-def trend_weights(
-        entries: List[dict],
-        k: int = 80,
-        alpha: float = 0.2) -> List[float]:
+def trend_weights(entries: List[dict], k: int = 80, alpha: float = 0.2) -> List[float]:
     """基于最近期趋势（EMA）的号码权重，越近越大。"""
     # 构造时间顺序（旧->新）的出现布尔矩阵: T x k
     occ = build_occ_matrix(entries, k=k)
@@ -425,9 +419,8 @@ def write_profit_plan(
     说明：快乐8玩法及赔率多样，若要计算期望收益，请在此项目中补充具体玩法的赔率表，并基于超几何分布计算命中概率与期望值。
     """
     out_path = out_path or os.path.join(
-        os.path.dirname(
-            os.path.dirname(__file__)),
-        "reports/kl8_profit_plan.md")
+        os.path.dirname(os.path.dirname(__file__)), "reports/kl8_profit_plan.md"
+    )
     lines = []
     lines.append("# 快乐8 最近30期 - 资金分配示例方案（学习用途）\n")
     # 文案：若为EV方案，说明基于“EV+权重分散”；否则为“权重示例”
@@ -442,8 +435,8 @@ def write_profit_plan(
     # 统计本期计划的总注数（若无计划则按预算/单价给出理论注数）
     total_stakes = sum(int(it.get("stakes", 0)) for it in plan) if plan else 0
     planned_stakes = (
-        total_stakes if total_stakes > 0 else int(
-            total_budget // price_per_bet))
+        total_stakes if total_stakes > 0 else int(total_budget // price_per_bet)
+    )
     lines.append(
         f"- 总预算：¥{total_budget:.2f} ； 单注价格：¥{price_per_bet:.2f} ； 计划总注数：{planned_stakes}\n"
     )
@@ -460,14 +453,12 @@ def write_profit_plan(
 
     # 若计划含EV字段，增加说明
     if plan and any("ev_per_bet" in it for it in plan):
-        ev0 = next((it["ev_per_bet"]
-                   for it in plan if "ev_per_bet" in it), None)
+        ev0 = next((it["ev_per_bet"] for it in plan if "ev_per_bet" in it), None)
         if ev0 is not None:
             lines.append(f"- 本玩法单注期望收益(理论，基于赔率与超几何)：{ev0} 元/注\n")
     # 仅当有计划且存在 ev_per_bet 字段且总注数>0 时，输出EV汇总
     if plan and any("ev_per_bet" in it for it in plan):
-        ev0 = next((it["ev_per_bet"]
-                   for it in plan if "ev_per_bet" in it), None)
+        ev0 = next((it["ev_per_bet"] for it in plan if "ev_per_bet" in it), None)
         if ev0 is not None and total_stakes > 0:
             total_ev = round(total_stakes * float(ev0), 2)
             lines.append(
@@ -565,15 +556,11 @@ def backtest_overlap(
 
     # 逐期评估
     for t in range(window, len(entries) - 1):
-        history = entries[t - window: t]  # 不包含 t
+        history = entries[t - window : t]  # 不包含 t
         next_draw = entries[t]  # t 这一期作为验证
         weights = trend_weights(history, k=80, alpha=alpha)
         # 生成 sets 组
-        picks = [
-            sample_without_replacement(
-                weights,
-                20,
-                rng) for _ in range(sets)]
+        picks = [sample_without_replacement(weights, 20, rng) for _ in range(sets)]
         # 取“最佳一组”与真实开奖的重叠
         hits = [overlap_count(next_draw["nums"], p) for p in picks]
         model_ov.append(max(hits))
@@ -762,10 +749,8 @@ def _annotate_bar(ax, rects, fmt="{:d}", fontsize=9, offset=3):
 
 
 def plot_dual_frequency_style(
-        entries: List[dict],
-        k: int = 80,
-        split: int = 40,
-        out_path: str | None = None) -> str:
+    entries: List[dict], k: int = 80, split: int = 40, out_path: str | None = None
+) -> str:
     """
     生成与“红/蓝条形图上下排布”的风格相近的图：
     - 上面：1..split 的出现频率（红色条）
@@ -782,12 +767,7 @@ def plot_dual_frequency_style(
     gs = fig.add_gridspec(2, 1, height_ratios=[3, 2], hspace=0.35)
 
     ax1 = fig.add_subplot(gs[0, 0])
-    rects1 = ax1.bar(
-        xs1,
-        ys1,
-        color="#FF5A5F",
-        edgecolor="#C64245",
-        linewidth=0.4)
+    rects1 = ax1.bar(xs1, ys1, color="#FF5A5F", edgecolor="#C64245", linewidth=0.4)
     ax1.set_title(f"号码出现频率分布（1 – {split}）", fontsize=18, pad=8)
     ax1.set_xlabel("号码", fontsize=12)
     ax1.set_ylabel("出现次数", fontsize=12)
@@ -801,12 +781,7 @@ def plot_dual_frequency_style(
     _annotate_bar(ax1, rects1, fmt="{:d}", fontsize=9, offset=3)
 
     ax2 = fig.add_subplot(gs[1, 0])
-    rects2 = ax2.bar(
-        xs2,
-        ys2,
-        color="#4D79FF",
-        edgecolor="#3656B3",
-        linewidth=0.4)
+    rects2 = ax2.bar(xs2, ys2, color="#4D79FF", edgecolor="#3656B3", linewidth=0.4)
     ax2.set_title(f"号码出现频率分布（{split + 1} – {k}）", fontsize=18, pad=8)
     ax2.set_xlabel("号码", fontsize=12)
     ax2.set_ylabel("出现次数", fontsize=12)
@@ -863,10 +838,8 @@ def plot_frequency_hist(
 
 
 def plot_ema_heatmap(
-        entries: List[dict],
-        alpha: float = 0.25,
-        k: int = 80,
-        out_path: str | None = None) -> str:
+    entries: List[dict], alpha: float = 0.25, k: int = 80, out_path: str | None = None
+) -> str:
     """EMA 热度热力图（行=时间旧->新，列=号码1..k）。"""
     occ = build_occ_matrix(entries, k=k)
     ema = ema_matrix(occ, alpha=alpha)
@@ -886,8 +859,7 @@ def plot_ema_heatmap(
     ax.set_ylabel("时间（旧 → 新）", fontsize=12)
     ax.set_title(f"KL8 EMA 热力图（alpha={alpha}）", fontsize=16, pad=10)
     ax.set_xticks(list(range(0, k, 5)))
-    ax.set_xticklabels([str(i if i != 0 else 1)
-                       for i in range(0, k, 5)], fontsize=9)
+    ax.set_xticklabels([str(i if i != 0 else 1) for i in range(0, k, 5)], fontsize=9)
     ax.tick_params(axis="y", labelsize=9)
     out_path = out_path or os.path.join(PLOTS_DIR, "kl8_ema_heatmap.png")
     fig.tight_layout()
@@ -911,15 +883,7 @@ def load_payouts(path: str | None) -> dict | None:
         template = {
             "choose": 7,
             "price_per_bet": 2.0,
-            "payouts": {
-                "0": 0,
-                "1": 0,
-                "2": 0,
-                "3": 0,
-                "4": 0,
-                "5": 0,
-                "6": 0,
-                "7": 0},
+            "payouts": {"0": 0, "1": 0, "2": 0, "3": 0, "4": 0, "5": 0, "6": 0, "7": 0},
         }
         try:
             with open(p, "w", encoding="utf-8") as f:
@@ -1161,9 +1125,8 @@ def allocate_budget_by_ev(
 
 
 def plot_overlap_hist_compare(
-        model_overlaps: List[int],
-        random_overlaps: List[int],
-        out_path: str | None = None) -> str:
+    model_overlaps: List[int], random_overlaps: List[int], out_path: str | None = None
+) -> str:
     """模型 vs 随机 的命中重叠直方图对比。"""
     plt.figure()
     # 统一的 bins
@@ -1273,14 +1236,9 @@ def main():
         normed = [normalize_entry(e) for e in fetched if e]
         # 简单去重: 以期号为键
         exist_codes = {h.get("code") for h in history}
-        merged = history + \
-            [e for e in normed if e.get("code") not in exist_codes]
+        merged = history + [e for e in normed if e.get("code") not in exist_codes]
         # 按期号/日期排序（期号非严格可排序，优先按日期）
-        merged.sort(
-            key=lambda x: (
-                x.get(
-                    "date", ""), x.get(
-                    "code", "")), reverse=True)
+        merged.sort(key=lambda x: (x.get("date", ""), x.get("code", "")), reverse=True)
         if args.limit and args.limit > 0:
             merged = merged[: args.limit]
             print(f"[INFO] 按 --limit={args.limit} 截断为最近 {len(merged)} 期")
@@ -1313,23 +1271,17 @@ def main():
         )
         print("[INFO] 回测摘要:", bt["summary"])
         # 画对比图
-        cmp_png = plot_overlap_hist_compare(
-            bt["model_overlaps"], bt["random_overlaps"])
+        cmp_png = plot_overlap_hist_compare(bt["model_overlaps"], bt["random_overlaps"])
         print(f"[INFO] 已生成回测对比图: {cmp_png}")
 
     recs: List[List[int]] = []
     if args.recommend and history:
         if args.play_pick and args.play_pick > 0:
             recs = recommend_pickn_sets(
-                history,
-                n=args.play_pick,
-                sets=args.recommend,
-                rng_seed=args.seed)
+                history, n=args.play_pick, sets=args.recommend, rng_seed=args.seed
+            )
         else:
-            recs = recommend_sets(
-                history,
-                sets=args.recommend,
-                rng_seed=args.seed)
+            recs = recommend_sets(history, sets=args.recommend, rng_seed=args.seed)
         for i, r in enumerate(recs, 1):
             print(f"方案{i}: ", ", ".join(f"{x:02d}" for x in r))
 
@@ -1338,23 +1290,22 @@ def main():
     if args.plan and history:
         if args.play_pick and args.play_pick > 0:
             payouts_cfg = load_payouts(args.payouts)
-            if (payouts_cfg and int(payouts_cfg.get(
-                    "choose", args.play_pick)) == args.play_pick):
-                price = float(
-                    payouts_cfg.get(
-                        "price_per_bet",
-                        args.price_per_bet))
+            if (
+                payouts_cfg
+                and int(payouts_cfg.get("choose", args.play_pick)) == args.play_pick
+            ):
+                price = float(payouts_cfg.get("price_per_bet", args.price_per_bet))
                 weights_for_plan = trend_weights(history, k=80, alpha=0.25)
                 plan = allocate_budget_by_ev(
-                    (recs if recs else recommend_pickn_sets(
-                        history,
-                        n=args.play_pick,
-                        sets=5,
-                        rng_seed=args.seed)),
+                    (
+                        recs
+                        if recs
+                        else recommend_pickn_sets(
+                            history, n=args.play_pick, sets=5, rng_seed=args.seed
+                        )
+                    ),
                     n_choose=args.play_pick,
-                    payouts=payouts_cfg.get(
-                        "payouts",
-                        {}),
+                    payouts=payouts_cfg.get("payouts", {}),
                     total_budget=args.budget,
                     price_per_bet=price,
                     weights=weights_for_plan,
@@ -1373,45 +1324,36 @@ def main():
                 # 无赔率表，退回权重分配
                 weights_for_plan = trend_weights(history, k=80, alpha=0.25)
                 plan = allocate_budget_by_score(
-                    (recs if recs else recommend_pickn_sets(
-                        history,
-                        n=args.play_pick,
-                        sets=5,
-                        rng_seed=args.seed)),
+                    (
+                        recs
+                        if recs
+                        else recommend_pickn_sets(
+                            history, n=args.play_pick, sets=5, rng_seed=args.seed
+                        )
+                    ),
                     weights_for_plan,
                     total_budget=args.budget,
                     price_per_bet=args.price_per_bet,
                 )
                 plan_path = write_profit_plan(
-                    history,
-                    recs if recs else [],
-                    plan,
-                    args.budget,
-                    args.price_per_bet)
+                    history, recs if recs else [], plan, args.budget, args.price_per_bet
+                )
                 print(f"[WARN] 未找到有效赔率表，已按权重分配: {plan_path}")
         else:
             weights_for_plan = trend_weights(history, k=80, alpha=0.25)
             plan = allocate_budget_by_score(
-                recs if recs else recommend_sets(
-                    history,
-                    sets=5,
-                    rng_seed=args.seed),
+                recs if recs else recommend_sets(history, sets=5, rng_seed=args.seed),
                 weights_for_plan,
                 total_budget=args.budget,
                 price_per_bet=args.price_per_bet,
             )
             plan_path = write_profit_plan(
-                history,
-                recs if recs else [],
-                plan,
-                args.budget,
-                args.price_per_bet)
+                history, recs if recs else [], plan, args.budget, args.price_per_bet
+            )
             print(f"[INFO] 已生成资金分配方案: {plan_path}")
 
     if args.report and history:
-        write_report(
-            history, recs, backtest_summary=(
-                bt["summary"] if bt else None))
+        write_report(history, recs, backtest_summary=(bt["summary"] if bt else None))
         print(f"[INFO] 已生成报告: {REPORT_FILE}")
 
 
