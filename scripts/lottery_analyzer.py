@@ -81,8 +81,7 @@ class DoubleColorBallAnalyzer:
         self.lottery_data = []
 
         # ML related
-        self.device = torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.red_model = None  # LSTM for red (multi-label)
         self.blue_model = None  # LSTM for blue (single-label)
         self.seq_len = 10
@@ -132,7 +131,10 @@ class DoubleColorBallAnalyzer:
 
     def _sorted_data(self, descending=True):
         """Return lottery_data sorted by (date, period)."""
-        def keyfn(r): return (r.get("date", ""), r.get("period", ""))
+
+        def keyfn(r):
+            return (r.get("date", ""), r.get("period", ""))
+
         return sorted(self.lottery_data, key=keyfn, reverse=descending)
 
     # ===== Weekday helpers =====
@@ -198,8 +200,7 @@ class DoubleColorBallAnalyzer:
                 #     time.sleep(random.uniform(0, 1))  # 初始随机延时
 
                 print(f"🌐 正在请求API... (尝试 {attempt + 1}/{max_retries})")
-                response = self.session.get(
-                    self.api_url, params=params, timeout=30)
+                response = self.session.get(self.api_url, params=params, timeout=30)
 
                 print(f"📡 响应状态码: {response.status_code}")
                 response.raise_for_status()
@@ -228,8 +229,7 @@ class DoubleColorBallAnalyzer:
                 page = 1
                 while page <= 200:  # 设置上限防止无限循环
                     params["pageNo"] = page
-                    response = self.session.get(
-                        self.api_url, params=params, timeout=30)
+                    response = self.session.get(self.api_url, params=params, timeout=30)
                     data = response.json()
 
                     if data.get("state") != 0 or not data.get("result"):
@@ -244,8 +244,7 @@ class DoubleColorBallAnalyzer:
 
                 for precise_page in range(start, end + 1):
                     params["pageNo"] = precise_page
-                    response = self.session.get(
-                        self.api_url, params=params, timeout=30)
+                    response = self.session.get(self.api_url, params=params, timeout=30)
                     data = response.json()
 
                     if data.get("state") != 0 or not data.get("result"):
@@ -315,8 +314,7 @@ class DoubleColorBallAnalyzer:
                     #     time.sleep(delay)
 
                     print(f"🌐 发送请求到API... (页面 {page}, 尝试 {retry_count + 1})")
-                    response = self.session.get(
-                        self.api_url, params=params, timeout=30)
+                    response = self.session.get(self.api_url, params=params, timeout=30)
 
                     print(f"📡 响应状态码: {response.status_code}")
                     response.raise_for_status()
@@ -347,8 +345,7 @@ class DoubleColorBallAnalyzer:
                             # 解析开奖日期
                             date_str = item.get("date", "")
                             # 提取日期部分，去除星期信息
-                            date_match = re.search(
-                                r"(\d{4}-\d{2}-\d{2})", date_str)
+                            date_match = re.search(r"(\d{4}-\d{2}-\d{2})", date_str)
                             if not date_match:
                                 continue
                             draw_date = date_match.group(1)
@@ -357,8 +354,7 @@ class DoubleColorBallAnalyzer:
                             red_str = item.get("red", "")
                             if not red_str:
                                 continue
-                            red_balls = [int(x.strip())
-                                         for x in red_str.split(",")]
+                            red_balls = [int(x.strip()) for x in red_str.split(",")]
 
                             # 解析蓝球号码
                             blue_str = item.get("blue", "")
@@ -367,10 +363,8 @@ class DoubleColorBallAnalyzer:
                             blue_ball = int(blue_str)
 
                             # 解析其他信息
-                            sales_amount = self._parse_number(
-                                item.get("sales", "0"))
-                            pool_amount = self._parse_number(
-                                item.get("poolmoney", "0"))
+                            sales_amount = self._parse_number(item.get("sales", "0"))
+                            pool_amount = self._parse_number(item.get("poolmoney", "0"))
 
                             # 解析奖级信息
                             prizegrades = item.get("prizegrades", [])
@@ -496,20 +490,14 @@ class DoubleColorBallAnalyzer:
             blue_counter[record["blue_ball"]] += 1
 
         # 红球频率排序
-        red_freq = sorted(
-            red_counter.items(),
-            key=lambda x: x[1],
-            reverse=True)
+        red_freq = sorted(red_counter.items(), key=lambda x: x[1], reverse=True)
         print("\n红球出现频率排行榜（前10）：")
         for i, (num, count) in enumerate(red_freq[:10], 1):
             percentage = (count / len(self.lottery_data)) * 100
             print(f"{i:2d}. 号码 {num:2d}: 出现 {count:3d} 次 ({percentage:.1f}%)")
 
         # 蓝球频率排序
-        blue_freq = sorted(
-            blue_counter.items(),
-            key=lambda x: x[1],
-            reverse=True)
+        blue_freq = sorted(blue_counter.items(), key=lambda x: x[1], reverse=True)
         print("\n蓝球出现频率排行榜（前10）：")
         for i, (num, count) in enumerate(blue_freq[:10], 1):
             percentage = (count / len(self.lottery_data)) * 100
@@ -531,9 +519,8 @@ class DoubleColorBallAnalyzer:
         ):
             super().__init__()
             self.lstm = nn.LSTM(
-                input_size=input_size,
-                hidden_size=hidden_size,
-                batch_first=True)
+                input_size=input_size, hidden_size=hidden_size, batch_first=True
+            )
             self.dropout = nn.Dropout(p=dropout)
             self.head = nn.Linear(hidden_size, output_size)
             self.output_type = output_type
@@ -567,8 +554,7 @@ class DoubleColorBallAnalyzer:
         odd = sum(1 for r in reds if r % 2 == 1)
         even = 6 - odd
         wdf = self._weekday_features(weekday)  # (5,)
-        base = np.array([s_norm, span_norm, odd / 6.0,
-                        even / 6.0], dtype=np.float32)
+        base = np.array([s_norm, span_norm, odd / 6.0, even / 6.0], dtype=np.float32)
         return np.concatenate([base, wdf], axis=0)
 
     def _onehot_multi(self, reds, blue, weekday):
@@ -592,9 +578,7 @@ class DoubleColorBallAnalyzer:
         """
         if not self.lottery_data or len(self.lottery_data) <= seq_len:
             return None
-        data_sorted = sorted(
-            self.lottery_data, key=lambda r: (
-                r["date"], r["period"]))
+        data_sorted = sorted(self.lottery_data, key=lambda r: (r["date"], r["period"]))
         feats = [
             self._onehot_multi(
                 r["red_balls"], r["blue_ball"], self._weekday_from_date(r["date"])
@@ -603,7 +587,7 @@ class DoubleColorBallAnalyzer:
         ]
         X, y_red, y_blue = [], [], []
         for i in range(seq_len, len(feats)):
-            X.append(np.stack(feats[i - seq_len: i], axis=0))  # (seq_len,58)
+            X.append(np.stack(feats[i - seq_len : i], axis=0))  # (seq_len,58)
             red_vec = np.zeros(33, dtype=np.float32)
             for rr in data_sorted[i]["red_balls"]:
                 red_vec[rr - 1] = 1.0
@@ -636,9 +620,7 @@ class DoubleColorBallAnalyzer:
         """
         if not self.lottery_data:
             return np.ones(33) / 33.0, np.ones(16) / 16.0
-        data_sorted = sorted(
-            self.lottery_data, key=lambda r: (
-                r["date"], r["period"]))
+        data_sorted = sorted(self.lottery_data, key=lambda r: (r["date"], r["period"]))
         reds_list = [r["red_balls"] for r in data_sorted]
         blues_list = [r["blue_ball"] for r in data_sorted]
         wdays = [self._weekday_from_date(r["date"]) for r in data_sorted]
@@ -692,11 +674,9 @@ class DoubleColorBallAnalyzer:
         shrink_beta=SHRINK_BETA_WEEKDAY,
     ):
         """在窗口内计算时间衰减边际概率；若 window 为 None 则等同全量。"""
-        data_sorted = sorted(
-            self.lottery_data, key=lambda r: (
-                r["date"], r["period"]))
+        data_sorted = sorted(self.lottery_data, key=lambda r: (r["date"], r["period"]))
         if window is not None and window > 0:
-            data_sorted = data_sorted[-int(window):]
+            data_sorted = data_sorted[-int(window) :]
         # 临时分析器以复用现有逻辑
         tmp = DoubleColorBallAnalyzer()
         tmp.lottery_data = list(data_sorted)
@@ -831,10 +811,7 @@ class DoubleColorBallAnalyzer:
 
         self.trained = True
 
-    def predict_next_probabilities(
-            self,
-            blend_alpha="auto",
-            decay_half_life=60):
+    def predict_next_probabilities(self, blend_alpha="auto", decay_half_life=60):
         """
         Next-step probabilities for red(33) and blue(16).
         If blend_alpha == "auto": tune alpha by comparing ML vs. marginal distributions
@@ -879,8 +856,7 @@ class DoubleColorBallAnalyzer:
             data_sorted = sorted(
                 self.lottery_data, key=lambda r: (r["date"], r["period"])
             )
-            recent = data_sorted[-int(min(WEEKDAY_RECENT_WINDOW,
-                                      len(data_sorted))):]
+            recent = data_sorted[-int(min(WEEKDAY_RECENT_WINDOW, len(data_sorted))) :]
             n_wd = sum(
                 1
                 for r in recent
@@ -1021,8 +997,7 @@ class DoubleColorBallAnalyzer:
                 mix_probs = base
             mix_probs = mix_probs / (mix_probs.sum() + 1e-12)
 
-            blue_idx = int(
-                merged[np.random.choice(len(merged), p=mix_probs)]) + 1
+            blue_idx = int(merged[np.random.choice(len(merged), p=mix_probs)]) + 1
             key = (tuple(reds), blue_idx)
             if key not in candidates or score > candidates[key][0]:
                 candidates[key] = (score, H)
@@ -1093,11 +1068,8 @@ class DoubleColorBallAnalyzer:
 
         # 最近10期的号码（按日期倒序）
         data_sorted = sorted(
-            self.lottery_data,
-            key=lambda r: (
-                r["date"],
-                r["period"]),
-            reverse=True)
+            self.lottery_data, key=lambda r: (r["date"], r["period"]), reverse=True
+        )
         recent_10 = data_sorted[:10]
 
         print("最近10期开奖号码：")
@@ -1164,8 +1136,11 @@ class DoubleColorBallAnalyzer:
             print("候选为空，回退到无和值约束的采样。")
             # 回退时：
             raw_candidates = self._monte_carlo_candidates(
-                p_red, p_blue, n=2500, recent_hot_blues=self._recent_hot_blues(
-                    window=10, min_count=2), )
+                p_red,
+                p_blue,
+                n=2500,
+                recent_hot_blues=self._recent_hot_blues(window=10, min_count=2),
+            )
 
         # 4) take top-K unique
         recommendations = []
@@ -1178,8 +1153,7 @@ class DoubleColorBallAnalyzer:
             even_count = 6 - odd_count
             span = max(reds) - min(reds)
             total_sum = sum(reds)
-            conf = float(np.mean([p_red[r - 1]
-                         for r in reds]) * p_blue[blue - 1])
+            conf = float(np.mean([p_red[r - 1] for r in reds]) * p_blue[blue - 1])
             recommendations.append(
                 {
                     "red_balls": reds,
@@ -1368,9 +1342,8 @@ class DoubleColorBallAnalyzer:
             # 确保目录存在
             os.makedirs("pics", exist_ok=True)
             plt.savefig(
-                "pics/lottery_frequency_analysis.png",
-                dpi=300,
-                bbox_inches="tight")
+                "pics/lottery_frequency_analysis.png", dpi=300, bbox_inches="tight"
+            )
             print("频率分析图表已保存为 pics/lottery_frequency_analysis.png")
 
     def get_lottery_rules(self):
@@ -1467,10 +1440,7 @@ class DoubleColorBallAnalyzer:
 |------|------|----------|----------|
 """
 
-        red_freq = sorted(
-            red_counter.items(),
-            key=lambda x: x[1],
-            reverse=True)
+        red_freq = sorted(red_counter.items(), key=lambda x: x[1], reverse=True)
         for i, (num, count) in enumerate(red_freq[:15], 1):
             percentage = (count / len(self.lottery_data)) * 100
             report_content += (
@@ -1484,10 +1454,7 @@ class DoubleColorBallAnalyzer:
 |------|------|----------|----------|
 """
 
-        blue_freq = sorted(
-            blue_counter.items(),
-            key=lambda x: x[1],
-            reverse=True)
+        blue_freq = sorted(blue_counter.items(), key=lambda x: x[1], reverse=True)
         for i, (num, count) in enumerate(blue_freq[:10], 1):
             percentage = (count / len(self.lottery_data)) * 100
             report_content += (
@@ -2017,9 +1984,8 @@ class DoubleColorBallAnalyzer:
         }
 
     def update_readme_recommendations(
-            self,
-            readme_path="reports/double_color_balls_profits.md",
-            timestamp=None):
+        self, readme_path="reports/double_color_balls_profits.md", timestamp=None
+    ):
         """更新/替换 README.md 中的推荐号码区块（无重复、无缩进代码块）。
         - 使用锚点 `<!-- BEGIN:recommendations -->` 与 `<!-- END:recommendations -->` 包裹内容；
         - 若锚点存在则原地替换；否则在第一个 H1 标题后插入；若找不到 H1，则追加到末尾；
@@ -2107,8 +2073,7 @@ class DoubleColorBallAnalyzer:
                     # 在 H1 后插入一个空行 + 区块
                     prefix = lines[:insert_pos]
                     suffix = lines[insert_pos:]
-                    if len(prefix) == 0 or (
-                            prefix and prefix[-1].strip() != ""):
+                    if len(prefix) == 0 or (prefix and prefix[-1].strip() != ""):
                         prefix.append("")
                     new_lines = prefix + [block] + [""] + suffix
                     new_content = "\n".join(new_lines)
