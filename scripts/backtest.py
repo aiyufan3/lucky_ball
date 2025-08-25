@@ -17,21 +17,22 @@
         --half-life 60 \
         --alpha-fixed 0.35 \
         --short-win 30 --long-win 180 --mix-betas 0.2 0.35 0.5
-        
+
 说明：
 - 默认从 data/lottery_data.json 读取历史数据；若不存在则调用 analyzer 抓取一次后再跑
 - 为了速度，默认每个 t 仅训练少量 epoch，可通过 --epochs 调整
 - 训练集使用截至 t 的全部历史；目标为第 t+1 期
 """
 
-import os
-import sys
-import json
-import argparse
-from datetime import datetime
-import numpy as np
 # 解析命令行参数
 import argparse
+import json
+import os
+import sys
+from datetime import datetime
+
+import numpy as np
+
 # 默认参数（可通过 CLI 覆盖）
 DEFAULT_DECAY_HALF_LIFE = 60
 DEFAULT_ALPHA_FIXED = 0.40
@@ -50,6 +51,7 @@ from lottery_analyzer import DoubleColorBallAnalyzer  # noqa: E402
 
 # ---------------------- 工具函数 ----------------------
 
+
 def sort_records_asc(records):
     # 按日期、期号升序
     return sorted(records, key=lambda r: (r["date"], r["period"]))
@@ -62,7 +64,8 @@ def filter_by_start_date(records, start_date_str=None):
         start = datetime.strptime(start_date_str, "%Y-%m-%d").date()
     except Exception:
         return records
-    out = [r for r in records if datetime.strptime(r["date"], "%Y-%m-%d").date() >= start]
+    out = [r for r in records if datetime.strptime(
+        r["date"], "%Y-%m-%d").date() >= start]
     return out
 
 
@@ -82,7 +85,10 @@ def blue_hit_at_k(p_blue, true_blue, k):
 
 # ---------------------- Baseline 计算辅助 ----------------------
 
-def _baseline_probs(analyzer, train_records, *, half_life, cond_weekday=None, window=None):
+
+def _baseline_probs(
+    analyzer, train_records, *, half_life, cond_weekday=None, window=None
+):
     """基于给定训练集/窗口计算先验概率。
     如果提供 window，则仅使用最近 window 期记录；否则使用全部 train_records。
     cond_weekday: None 表示全局；否则使用 analyzer 的 compute_marginal_probs 的周几条件版本。
@@ -94,7 +100,9 @@ def _baseline_probs(analyzer, train_records, *, half_life, cond_weekday=None, wi
         recs = recs[-int(window):]
     tmp = DoubleColorBallAnalyzer()
     tmp.lottery_data = list(recs)
-    pr, pb = tmp.compute_marginal_probs(decay_half_life=half_life, cond_weekday=cond_weekday)
+    pr, pb = tmp.compute_marginal_probs(
+        decay_half_life=half_life, cond_weekday=cond_weekday
+    )
     return pr, pb
 
 
@@ -111,7 +119,10 @@ def _mix_probs(p_a, p_b, beta):
 
 # ---------------------- 回测逻辑 ----------------------
 
-def roll_once(train_records, target_record, seq_len, epochs, lr, hidden_size, use_ml=True):
+
+def roll_once(
+    train_records, target_record, seq_len, epochs, lr, hidden_size, use_ml=True
+):
     """给定训练集与目标期，返回多种对比概率。
     返回 dict:
         {
@@ -136,7 +147,9 @@ def roll_once(train_records, target_record, seq_len, epochs, lr, hidden_size, us
     # ============ 训练（可选） ============
     if use_ml:
         try:
-            analyzer.train_ml_model(seq_len=seq_len, epochs=epochs, lr=lr, hidden_size=hidden_size)
+            analyzer.train_ml_model(
+                seq_len=seq_len, epochs=epochs, lr=lr, hidden_size=hidden_size
+            )
         except Exception as e:
             print(f"[warn] 训练失败，退化为基线：{e}")
             analyzer.trained = False
@@ -146,12 +159,36 @@ def roll_once(train_records, target_record, seq_len, epochs, lr, hidden_size, us
 
     # ---------- Baselines ----------
     # Global (不按周几 / 按周几)
-    pr_g, pb_g = _baseline_probs(analyzer, train_records, half_life=DEFAULT_DECAY_HALF_LIFE, cond_weekday=None, window=None)
-    pr_wd, pb_wd = _baseline_probs(analyzer, train_records, half_life=DEFAULT_DECAY_HALF_LIFE, cond_weekday=target_wd, window=None)
+    pr_g, pb_g = _baseline_probs(
+        analyzer,
+        train_records,
+        half_life=DEFAULT_DECAY_HALF_LIFE,
+        cond_weekday=None,
+        window=None,
+    )
+    pr_wd, pb_wd = _baseline_probs(
+        analyzer,
+        train_records,
+        half_life=DEFAULT_DECAY_HALF_LIFE,
+        cond_weekday=target_wd,
+        window=None,
+    )
 
     # Short / Long （都使用按周几的条件，便于与模型一致；也可按需切换为 None）
-    pr_s, pb_s = _baseline_probs(analyzer, train_records, half_life=DEFAULT_DECAY_HALF_LIFE, cond_weekday=target_wd, window=DEFAULT_SHORT_WIN)
-    pr_l, pb_l = _baseline_probs(analyzer, train_records, half_life=DEFAULT_DECAY_HALF_LIFE, cond_weekday=target_wd, window=DEFAULT_LONG_WIN)
+    pr_s, pb_s = _baseline_probs(
+        analyzer,
+        train_records,
+        half_life=DEFAULT_DECAY_HALF_LIFE,
+        cond_weekday=target_wd,
+        window=DEFAULT_SHORT_WIN,
+    )
+    pr_l, pb_l = _baseline_probs(
+        analyzer,
+        train_records,
+        half_life=DEFAULT_DECAY_HALF_LIFE,
+        cond_weekday=target_wd,
+        window=DEFAULT_LONG_WIN,
+    )
 
     # Mix(β) = β*Short + (1-β)*Global_weekday（这里选用 weekday 版的全局以保持条件一致）
     pr_mix = {}
@@ -161,16 +198,19 @@ def roll_once(train_records, target_record, seq_len, epochs, lr, hidden_size, us
         pb_mix[beta] = _mix_probs(pb_s, pb_wd, beta)
 
     # ---------- ML (auto/fixed) ----------
-    ml_auto_red, ml_auto_blue = analyzer.predict_next_probabilities(blend_alpha="auto", decay_half_life=DEFAULT_DECAY_HALF_LIFE)
-    ml_fixed_red, ml_fixed_blue = analyzer.predict_next_probabilities(blend_alpha=DEFAULT_ALPHA_FIXED, decay_half_life=DEFAULT_DECAY_HALF_LIFE)
+    ml_auto_red, ml_auto_blue = analyzer.predict_next_probabilities(
+        blend_alpha="auto", decay_half_life=DEFAULT_DECAY_HALF_LIFE
+    )
+    ml_fixed_red, ml_fixed_blue = analyzer.predict_next_probabilities(
+        blend_alpha=DEFAULT_ALPHA_FIXED, decay_half_life=DEFAULT_DECAY_HALF_LIFE)
 
     out = {
-        'ML_auto': (ml_auto_red, ml_auto_blue),
-        'ML_fixed': (ml_fixed_red, ml_fixed_blue),
-        'BASE_global': (pr_g, pb_g),
-        'BASE_weekday': (pr_wd, pb_wd),
-        'BASE_short': (pr_s, pb_s),
-        'BASE_long': (pr_l, pb_l),
+        "ML_auto": (ml_auto_red, ml_auto_blue),
+        "ML_fixed": (ml_fixed_red, ml_fixed_blue),
+        "BASE_global": (pr_g, pb_g),
+        "BASE_weekday": (pr_wd, pb_wd),
+        "BASE_short": (pr_s, pb_s),
+        "BASE_long": (pr_l, pb_l),
     }
     for beta in DEFAULT_MIX_BETAS:
         key = f"BASE_mix_{beta:.2f}"
@@ -178,16 +218,27 @@ def roll_once(train_records, target_record, seq_len, epochs, lr, hidden_size, us
     return out
 
 
-def backtest(records, seq_len=10, epochs=3, lr=1e-3, hidden_size=64,
-             k_list=(6, 10, 12, 16), blue_k_list=(1, 2, 3, 4), use_ml=True):
+def backtest(
+    records,
+    seq_len=10,
+    epochs=3,
+    lr=1e-3,
+    hidden_size=64,
+    k_list=(6, 10, 12, 16),
+    blue_k_list=(1, 2, 3, 4),
+    use_ml=True,
+):
     recs = sort_records_asc(records)
     if len(recs) <= seq_len + 1:
         raise ValueError("数据量过少，无法回测")
 
     variants = [
-        'ML_auto', 'ML_fixed',
-        'BASE_global', 'BASE_weekday',
-        'BASE_short', 'BASE_long'
+        "ML_auto",
+        "ML_fixed",
+        "BASE_global",
+        "BASE_weekday",
+        "BASE_short",
+        "BASE_long",
     ] + [f"BASE_mix_{b:.2f}" for b in DEFAULT_MIX_BETAS]
     # 累积器：每个 k 分别累计
     red_hits = {v: {k: [] for k in k_list} for v in variants}
@@ -197,24 +248,34 @@ def backtest(records, seq_len=10, epochs=3, lr=1e-3, hidden_size=64,
     for t in range(seq_len, len(recs) - 1):
         train = recs[:t]
         target = recs[t]
-        prob_map = roll_once(train, target, seq_len, epochs, lr, hidden_size, use_ml=use_ml)
+        prob_map = roll_once(
+            train, target, seq_len, epochs, lr, hidden_size, use_ml=use_ml
+        )
 
         true_reds = target["red_balls"]
         true_blue = target["blue_ball"]
 
         for name, (p_red, p_blue) in prob_map.items():
             for k in k_list:
-                red_hits[name][k].append(hit_at_k_red(p_red, true_reds, min(k, 33)))
+                red_hits[name][k].append(
+                    hit_at_k_red(
+                        p_red, true_reds, min(
+                            k, 33)))
             for bk in blue_k_list:
-                blue_hits[name][bk].append(blue_hit_at_k(p_blue, true_blue, min(bk, 16)))
+                blue_hits[name][bk].append(
+                    blue_hit_at_k(p_blue, true_blue, min(bk, 16))
+                )
 
     # 汇总
     def avg(d):
-        return {k: (float(np.mean(v)) if len(v) else 0.0) for k, v in d.items()}
+        return {k: (float(np.mean(v)) if len(v) else 0.0)
+                for k, v in d.items()}
 
     summary = {"N_eval": len(recs) - 1 - seq_len}
-    summary.update({f"red_{name}": avg(series) for name, series in red_hits.items()})
-    summary.update({f"blue_{name}": avg(series) for name, series in blue_hits.items()})
+    summary.update({f"red_{name}": avg(series)
+                   for name, series in red_hits.items()})
+    summary.update({f"blue_{name}": avg(series)
+                   for name, series in blue_hits.items()})
     return summary
 
 
@@ -225,7 +286,9 @@ def pretty_print(summary, k_list, blue_k_list):
 
     # 红球表
     print("-- 红球 Recall@k (每期命中占6的比例的平均) --")
-    base_cols = ['BASE_global', 'BASE_weekday', 'BASE_short', 'BASE_long'] + [f"BASE_mix_{b:.2f}" for b in DEFAULT_MIX_BETAS]
+    base_cols = ["BASE_global", "BASE_weekday", "BASE_short", "BASE_long"] + [
+        f"BASE_mix_{b:.2f}" for b in DEFAULT_MIX_BETAS
+    ]
     header = "k\tML(auto)\tML(fixed)\t" + "\t".join(base_cols)
     print(header)
     for k in k_list:
@@ -256,26 +319,63 @@ def pretty_print(summary, k_list, blue_k_list):
 
 # ---------------------- CLI ----------------------
 
+
 def main():
     global DEFAULT_DECAY_HALF_LIFE, DEFAULT_ALPHA_FIXED
     global DEFAULT_SHORT_WIN, DEFAULT_LONG_WIN, DEFAULT_MIX_BETAS
 
-    # 创建解析器    
+    # 创建解析器
     ap = argparse.ArgumentParser(description="双色球滚动回测")
-    ap.add_argument("--data", default="data/lottery_data.json", help="历史数据文件路径；若不存在将自动抓取")
-    ap.add_argument("--start", default=None, help="起始日期(含)，格式YYYY-MM-DD，用于裁剪历史")
+    ap.add_argument(
+        "--data",
+        default="data/lottery_data.json",
+        help="历史数据文件路径；若不存在将自动抓取",
+    )
+    ap.add_argument(
+        "--start", default=None, help="起始日期(含)，格式YYYY-MM-DD，用于裁剪历史"
+    )
     ap.add_argument("--seq-len", type=int, default=10, help="LSTM 序列长度")
     ap.add_argument("--epochs", type=int, default=3, help="每步训练的epoch")
     ap.add_argument("--hidden-size", type=int, default=64, help="LSTM隐藏层大小")
     ap.add_argument("--lr", type=float, default=1e-3, help="学习率")
-    ap.add_argument("--k", type=int, nargs="*", default=[6, 10, 12, 16], help="红球Hit@k列表")
-    ap.add_argument("--blue-k", type=int, nargs="*", default=[1, 2, 3, 4], help="蓝球命中@k列表")
+    ap.add_argument(
+        "--k", type=int, nargs="*", default=[6, 10, 12, 16], help="红球Hit@k列表"
+    )
+    ap.add_argument(
+        "--blue-k", type=int, nargs="*", default=[1, 2, 3, 4], help="蓝球命中@k列表"
+    )
     ap.add_argument("--no-ml", action="store_true", help="只跑基线（时间衰减频率）")
-    ap.add_argument("--half-life", type=int, default=DEFAULT_DECAY_HALF_LIFE, help="时间衰减的半衰期(期数)")
-    ap.add_argument("--alpha-fixed", type=float, default=DEFAULT_ALPHA_FIXED, help="ML 固定融合系数 alpha")
-    ap.add_argument("--short-win", type=int, default=DEFAULT_SHORT_WIN, help="短窗口期数（用于短期先验）")
-    ap.add_argument("--long-win", type=int, default=DEFAULT_LONG_WIN, help="长窗口期数（用于长期先验）")
-    ap.add_argument("--mix-betas", type=float, nargs="*", default=DEFAULT_MIX_BETAS, help="短期/全局先验融合权重β（可多值）")
+    ap.add_argument(
+        "--half-life",
+        type=int,
+        default=DEFAULT_DECAY_HALF_LIFE,
+        help="时间衰减的半衰期(期数)",
+    )
+    ap.add_argument(
+        "--alpha-fixed",
+        type=float,
+        default=DEFAULT_ALPHA_FIXED,
+        help="ML 固定融合系数 alpha",
+    )
+    ap.add_argument(
+        "--short-win",
+        type=int,
+        default=DEFAULT_SHORT_WIN,
+        help="短窗口期数（用于短期先验）",
+    )
+    ap.add_argument(
+        "--long-win",
+        type=int,
+        default=DEFAULT_LONG_WIN,
+        help="长窗口期数（用于长期先验）",
+    )
+    ap.add_argument(
+        "--mix-betas",
+        type=float,
+        nargs="*",
+        default=DEFAULT_MIX_BETAS,
+        help="短期/全局先验融合权重β（可多值）",
+    )
     args = ap.parse_args()
 
     DEFAULT_DECAY_HALF_LIFE = int(args.half_life)
@@ -285,7 +385,9 @@ def main():
     DEFAULT_LONG_WIN = int(args.long_win)
     DEFAULT_MIX_BETAS = [float(x) for x in args.mix_betas]
 
-    print(f"[cfg] half_life={DEFAULT_DECAY_HALF_LIFE}, alpha_fixed={DEFAULT_ALPHA_FIXED}, short_win={DEFAULT_SHORT_WIN}, long_win={DEFAULT_LONG_WIN}, mix_betas={DEFAULT_MIX_BETAS}")
+    print(
+        f"[cfg] half_life={DEFAULT_DECAY_HALF_LIFE}, alpha_fixed={DEFAULT_ALPHA_FIXED}, short_win={DEFAULT_SHORT_WIN}, long_win={DEFAULT_LONG_WIN}, mix_betas={DEFAULT_MIX_BETAS}"
+    )
 
     # 加载数据
     if os.path.exists(args.data):

@@ -197,7 +197,9 @@ release_notes.md
 # Test files
 test_lottery_data.json
 
-# Keep generated data files
-# lottery_data.json
-# lottery_frequency_analysis.png
-# colorballs_analysis_report.md
+# Generated data files (auto-generated, should not be committed)
+data/lottery_data.json
+data/kl8_history.json
+data/lottery_aggregated_data.hjson
+pics/*.png
+reports/*.md
