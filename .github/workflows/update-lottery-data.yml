@@ -150,8 +150,8 @@ jobs:
       if: steps.check_changes.outputs.changed == 'true'
       run: |
         echo "准备提交文件变更..."
-        git config --local user.name "${{ github.actor }}"
-        git config --local user.email "${{ github.actor }}@users.noreply.github.com"
+        git config --local user.name "luckyluckybot"
+        git config --local user.email "luckyluckybot@example.com"
 
         [ -e "data" ] && git add -A data || echo "data 目录不存在"
         [ -e "reports" ] && git add -A reports || echo "reports 目录不存在"
