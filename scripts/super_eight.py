@@ -54,20 +54,8 @@ import requests
 
 matplotlib.use("Agg")  # for headless environments
 
-# 中文字体与负号（跨平台回退）
-# 依次尝试常见中文字体，最后退回 DejaVu Sans 以避免报错
-plt.rcParams["font.family"] = ["sans-serif"]
-plt.rcParams["font.sans-serif"] = [
-    "PingFang SC",  # macOS
-    "Hiragino Sans GB",  # macOS (部分)
-    "Heiti SC",  # macOS 旧版
-    "Microsoft YaHei",  # Windows
-    "SimHei",  # Windows/Linux
-    "Noto Sans CJK SC",  # 多平台
-    "WenQuanYi Zen Hei",  # Linux
-    "Arial Unicode MS",  # 备选
-    "DejaVu Sans",  # 最后兜底（英文+部分符号）
-]
+# 设置中文字体支持（与lottery_analyzer.py保持一致）
+plt.rcParams["font.sans-serif"] = ["SimHei", "Arial Unicode MS", "DejaVu Sans"]
 plt.rcParams["axes.unicode_minus"] = False
 
 API_URL = "https://www.cwl.gov.cn/cwl_admin/front/cwlkj/search/kjxx/findDrawNotice"
@@ -768,7 +756,9 @@ def plot_dual_frequency_style(
 
     ax1 = fig.add_subplot(gs[0, 0])
     rects1 = ax1.bar(xs1, ys1, color="#FF5A5F", edgecolor="#C64245", linewidth=0.4)
-    ax1.set_title(f"号码出现频率分布（1 – {split}）", fontsize=18, pad=8)
+    ax1.set_title(
+        f"快乐8 号码出现频率分布（1 – {split}）", fontsize=18, pad=8, fontweight="bold"
+    )
     ax1.set_xlabel("号码", fontsize=12)
     ax1.set_ylabel("出现次数", fontsize=12)
     ax1.set_xticks(xs1)  # 每 1 个刻度
@@ -782,7 +772,12 @@ def plot_dual_frequency_style(
 
     ax2 = fig.add_subplot(gs[1, 0])
     rects2 = ax2.bar(xs2, ys2, color="#4D79FF", edgecolor="#3656B3", linewidth=0.4)
-    ax2.set_title(f"号码出现频率分布（{split + 1} – {k}）", fontsize=18, pad=8)
+    ax2.set_title(
+        f"快乐8 号码出现频率分布（{split + 1} – {k}）",
+        fontsize=18,
+        pad=8,
+        fontweight="bold",
+    )
     ax2.set_xlabel("号码", fontsize=12)
     ax2.set_ylabel("出现次数", fontsize=12)
     ax2.set_xticks(xs2)  # 每 1 个刻度
@@ -795,8 +790,8 @@ def plot_dual_frequency_style(
     _annotate_bar(ax2, rects2, fmt="{:d}", fontsize=9, offset=3)
 
     out_path = out_path or DUAL_FREQ_FILE
-    fig.tight_layout()
-    fig.savefig(out_path, bbox_inches="tight")
+    # Use bbox_inches="tight" instead of tight_layout to avoid warnings
+    fig.savefig(out_path, bbox_inches="tight", dpi=180)
     plt.close(fig)
     return out_path
 
@@ -813,13 +808,15 @@ def plot_frequency_hist(
 
     rects = ax.bar(xs, ys, color="#2F78FF", edgecolor="#234FAD", linewidth=0.4)
 
-    ax.set_title("KL8 号码出现频率（全区 1 – 80）", fontsize=18, pad=10)
+    ax.set_title(
+        "快乐8 号码出现频率分布（全区 1 – 80）", fontsize=18, pad=10, fontweight="bold"
+    )
     ax.set_xlabel("号码", fontsize=12)
     ax.set_ylabel("出现次数", fontsize=12)
 
-    # 横轴：每 1 个号码一个刻度
-    ax.set_xticks(xs)
-    ax.tick_params(axis="x", rotation=0, labelsize=8)
+    # 横轴：每 5 个号码一个刻度，避免过于密集
+    ax.set_xticks(xs[::5])
+    ax.set_xticklabels([str(i) for i in xs[::5]], fontsize=10)
     ax.tick_params(axis="y", labelsize=10)
     ax.yaxis.set_major_locator(MaxNLocator(integer=True))
 
@@ -828,7 +825,17 @@ def plot_frequency_hist(
     ax.set_ylim(0, ymax * 1.15)
     ax.grid(axis="y", linestyle="--", alpha=0.35)
 
-    _annotate_bar(ax, rects, fmt="{:d}", fontsize=9, offset=3)
+    # 添加数值标签
+    for bar, freq_val in zip(rects, ys):
+        if freq_val > 0:
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                bar.get_height() + 0.5,
+                str(freq_val),
+                ha="center",
+                va="bottom",
+                fontsize=8,
+            )
 
     out_path = out_path or os.path.join(PLOTS_DIR, "kl8_frequency_hist.png")
     fig.tight_layout()
@@ -857,7 +864,9 @@ def plot_ema_heatmap(
     cbar.ax.tick_params(labelsize=10)
     ax.set_xlabel("号码（1..80）", fontsize=12)
     ax.set_ylabel("时间（旧 → 新）", fontsize=12)
-    ax.set_title(f"KL8 EMA 热力图（alpha={alpha}）", fontsize=16, pad=10)
+    ax.set_title(
+        f"快乐8 EMA 热力图（alpha={alpha}）", fontsize=16, pad=10, fontweight="bold"
+    )
     ax.set_xticks(list(range(0, k, 5)))
     ax.set_xticklabels([str(i if i != 0 else 1) for i in range(0, k, 5)], fontsize=9)
     ax.tick_params(axis="y", labelsize=9)
@@ -1128,19 +1137,40 @@ def plot_overlap_hist_compare(
     model_overlaps: List[int], random_overlaps: List[int], out_path: str | None = None
 ) -> str:
     """模型 vs 随机 的命中重叠直方图对比。"""
-    plt.figure()
+    fig = plt.figure(figsize=(12, 8), dpi=180)
+    ax = fig.add_subplot(111)
+
     # 统一的 bins
     bins = range(0, 21)  # 0..20
-    plt.hist(model_overlaps, bins=bins, alpha=0.5, label="Model")
-    plt.hist(random_overlaps, bins=bins, alpha=0.5, label="Random")
-    plt.xlabel("Overlap with Actual (0..20)")
-    plt.ylabel("Count")
-    plt.title("Model vs Random Overlap Distribution")
-    plt.legend()
+    ax.hist(
+        model_overlaps,
+        bins=bins,
+        alpha=0.6,
+        label="模型预测",
+        color="#FF6B6B",
+        edgecolor="#E74C3C",
+    )
+    ax.hist(
+        random_overlaps,
+        bins=bins,
+        alpha=0.6,
+        label="随机基线",
+        color="#4ECDC4",
+        edgecolor="#2ECC71",
+    )
+
+    ax.set_xlabel("命中号码数量（0-20）", fontsize=12)
+    ax.set_ylabel("频次", fontsize=12)
+    ax.set_title(
+        "快乐8 模型预测 vs 随机基线对比", fontsize=16, pad=10, fontweight="bold"
+    )
+    ax.legend(fontsize=11)
+    ax.grid(axis="y", linestyle="--", alpha=0.3)
+
     out_path = out_path or os.path.join(PLOTS_DIR, "kl8_overlap_compare.png")
-    plt.tight_layout()
-    plt.savefig(out_path, dpi=180)
-    plt.close()
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=180, bbox_inches="tight")
+    plt.close(fig)
     return out_path
 
 
