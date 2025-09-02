@@ -271,8 +271,11 @@ jobs:
       run: |
         echo "📝 准备提交文件变更..."
         
-        # 使用全局Git配置
-        echo "使用全局Git配置: $(git config --global user.name) <$(git config --global user.email)>"
+        # 配置Git用户身份（使用GitHub Actions的内置变量）
+        git config --global user.name "aiyufan3"
+        git config --global user.email "aiyufan3@users.noreply.github.com"
+        
+        echo "使用Git配置: $(git config --global user.name) <$(git config --global user.email)>"
         
         [ -e "data" ] && git add -A data || echo "data 目录不存在"
         [ -e "reports" ] && git add -A reports || echo "reports 目录不存在"
