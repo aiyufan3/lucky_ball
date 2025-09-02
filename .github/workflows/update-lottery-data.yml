@@ -19,10 +19,46 @@ jobs:
     runs-on: ubuntu-latest
     env:
       HEARTBEAT: "true"   # 若希望仅在真实数据变化时提交，将其改为 "false"
+      # 网络重试配置
+      MAX_RETRIES: 5
+      RETRY_DELAY: 10
+      NETWORK_TIMEOUT: 60
     # 确保PR只在合并时运行，而不是简单关闭时运行
     if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
 
     steps:
+    - name: 网络连接检测
+      id: network_check
+      run: |
+        echo "🔍 检测网络连接状态..."
+        
+        # 测试基本网络连接
+        if ping -c 3 8.8.8.8 >/dev/null 2>&1; then
+          echo "✅ 基本网络连接正常"
+          echo "network_status=ok" >> $GITHUB_OUTPUT
+        else
+          echo "❌ 基本网络连接失败"
+          echo "network_status=failed" >> $GITHUB_OUTPUT
+        fi
+        
+        # 测试DNS解析
+        if nslookup www.cwl.gov.cn >/dev/null 2>&1; then
+          echo "✅ DNS解析正常"
+          echo "dns_status=ok" >> $GITHUB_OUTPUT
+        else
+          echo "❌ DNS解析失败"
+          echo "dns_status=failed" >> $GITHUB_OUTPUT
+        fi
+        
+        # 测试API可达性
+        if curl -s --connect-timeout 10 --max-time 30 "https://www.cwl.gov.cn" >/dev/null 2>&1; then
+          echo "✅ 彩票官网可达"
+          echo "api_status=ok" >> $GITHUB_OUTPUT
+        else
+          echo "❌ 彩票官网不可达"
+          echo "api_status=failed" >> $GITHUB_OUTPUT
+        fi
+
     - name: 检出代码
       uses: actions/checkout@v4
       with:
@@ -43,53 +79,137 @@ jobs:
 
     - name: 安装依赖
       run: |
+        echo "📦 安装Python依赖包..."
+        
+        # 升级pip
         python -m pip install --upgrade pip
-        pip install requests pandas numpy matplotlib seaborn beautifulsoup4 hjson DrissionPage
-        pip install scipy statsmodels
+        
+        # 安装核心依赖（带重试机制）
+        for i in {1..${{ env.MAX_RETRIES }}}; do
+          echo "尝试安装依赖 (第 $i 次)..."
+          if pip install requests pandas numpy matplotlib seaborn beautifulsoup4 hjson DrissionPage scipy statsmodels; then
+            echo "✅ 核心依赖安装成功"
+            break
+          else
+            echo "❌ 第 $i 次安装失败"
+            if [ $i -lt ${{ env.MAX_RETRIES }} ]; then
+              echo "等待 ${{ env.RETRY_DELAY }} 秒后重试..."
+              sleep ${{ env.RETRY_DELAY }}
+            else
+              echo "❌ 所有重试都失败，退出"
+              exit 1
+            fi
+          fi
+        done
 
-        # 安装 CPU 版 PyTorch（避免 CUDA 依赖）
-        pip install torch --index-url https://download.pytorch.org/whl/cpu || true
+        # 安装 CPU 版 PyTorch（避免 CUDA 依赖，带重试）
+        echo "🧠 安装PyTorch CPU版本..."
+        for i in {1..3}; do
+          if pip install torch --index-url https://download.pytorch.org/whl/cpu; then
+            echo "✅ PyTorch安装成功"
+            break
+          else
+            echo "❌ PyTorch安装失败 (第 $i 次)"
+            if [ $i -lt 3 ]; then
+              sleep 10
+            fi
+          fi
+        done
 
-        # DrissionPage 如需浏览器，请在需要时开启以下脚本（默认关闭以加快执行速度）
-        # echo "安装Chrome浏览器..."
-        # wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
-        # echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" | sudo tee /etc/apt/sources.list.d/google-chrome.list
-        # sudo apt-get update
-        # sudo apt-get install -y google-chrome-stable
-        # google-chrome --version
-        # export DISPLAY=:99
+        echo "✅ 所有依赖安装完成"
+
+    - name: 网络状态验证
+      if: steps.network_check.outputs.network_status == 'failed' || steps.network_check.outputs.api_status == 'failed'
+      run: |
+        echo "⚠️ 网络状态异常，尝试网络修复..."
+        
+        # 尝试刷新DNS缓存
+        if command -v systemd-resolve >/dev/null 2>&1; then
+          sudo systemd-resolve --flush-caches || true
+        fi
+        
+        # 等待网络恢复
+        echo "等待网络恢复..."
+        sleep 30
+        
+        # 重新测试网络
+        if ping -c 3 8.8.8.8 >/dev/null 2>&1; then
+          echo "✅ 网络已恢复"
+        else
+          echo "❌ 网络仍未恢复，但继续执行..."
+        fi
 
     - name: 运行数据抓取与分析 (双色球 + 快乐8)
       run: |
-        echo "开始运行数据分析..."
+        echo "🚀 开始运行数据分析..."
         export MPLBACKEND=Agg
         mkdir -p data reports pics
         exit_code=0
+        
+        # 设置环境变量
+        export PYTHONUNBUFFERED=1
+        export PYTHONIOENCODING=utf-8
+        
+        # 网络重试函数
+        retry_with_backoff() {
+          local max_attempts=${{ env.MAX_RETRIES }}
+          local delay=${{ env.RETRY_DELAY }}
+          local attempt=1
+          
+          while [ $attempt -le $max_attempts ]; do
+            echo "🔄 尝试执行 $1 (第 $attempt 次)..."
+            
+            if eval "$1"; then
+              echo "✅ $1 执行成功"
+              return 0
+            else
+              echo "❌ $1 执行失败 (第 $attempt 次)"
+              
+              if [ $attempt -lt $max_attempts ]; then
+                echo "⏳ 等待 ${delay} 秒后重试..."
+                sleep $delay
+                delay=$((delay * 2))  # 指数退避
+              fi
+              
+              attempt=$((attempt + 1))
+            fi
+          done
+          
+          echo "❌ $1 在 $max_attempts 次尝试后仍然失败"
+          return 1
+        }
 
+        # 运行双色球分析（带重试）
         if [ -f "main.py" ]; then
           echo "[SSQ] 运行 main.py ..."
-          python main.py || exit_code=$?
+          retry_with_backoff "python main.py" || exit_code=$?
         elif [ -f "scripts/lottery_analyzer.py" ]; then
           echo "[SSQ] 运行 scripts/lottery_analyzer.py ..."
-          python scripts/lottery_analyzer.py || exit_code=$?
+          retry_with_backoff "python scripts/lottery_analyzer.py" || exit_code=$?
         elif [ -f "lottery_analyzer.py" ]; then
           echo "[SSQ] 运行 lottery_analyzer.py ..."
-          python lottery_analyzer.py || exit_code=$?
+          retry_with_backoff "python lottery_analyzer.py" || exit_code=$?
         else
           echo "[SSQ] 未找到入口 (main.py 或 lottery_analyzer.py)，跳过"
         fi
 
+        # 运行快乐8分析（带重试）
         if [ -f "scripts/super_eight.py" ]; then
           echo "[KL8] 运行 scripts/super_eight.py ..."
-          python scripts/super_eight.py --fetch --limit 200 --recommend 5 --plots --plots_dual --report --plan --budget 22 --price_per_bet 2 --seed 42 || exit_code=$?
+          retry_with_backoff "python scripts/super_eight.py --fetch --limit 200 --recommend 5 --plots --plots_dual --report --plan --budget 22 --price_per_bet 2 --seed 42" || exit_code=$?
         elif [ -f "super_eight.py" ]; then
           echo "[KL8] 运行 super_eight.py ..."
-          python super_eight.py --fetch --limit 200 --recommend 5 --plots --plots_dual --report --plan --budget 22 --price_per_bet 2 --seed 42 || exit_code=$?
+          retry_with_backoff "python super_eight.py --fetch --limit 200 --recommend 5 --plots --plots_dual --report --plan --budget 22 --price_per_bet 2 --seed 42" || exit_code=$?
         else
           echo "[KL8] 未找到 super_eight.py，跳过"
         fi
 
-        echo "分析完成，退出码: $exit_code"
+        echo "📊 分析完成，退出码: $exit_code"
+        
+        # 即使有错误也继续执行，避免整个工作流失败
+        if [ $exit_code -ne 0 ]; then
+          echo "⚠️ 部分分析失败，但继续执行后续步骤..."
+        fi
 
         if [ "$HEARTBEAT" = "true" ]; then
           mkdir -p .github
@@ -102,7 +222,7 @@ jobs:
     - name: 检查文件变更
       id: check_changes
       run: |
-        echo "检查文件变更..."
+        echo "🔍 检查文件变更..."
         # 仅在这些目录/文件存在时再比较
         TARGETS=()
         for p in data reports pics; do
@@ -149,10 +269,11 @@ jobs:
     - name: 提交更新
       if: steps.check_changes.outputs.changed == 'true'
       run: |
-        echo "准备提交文件变更..."
-        git config --local user.name "luckyluckybot"
-        git config --local user.email "luckyluckybot@example.com"
-
+        echo "📝 准备提交文件变更..."
+        
+        # 使用全局Git配置
+        echo "使用全局Git配置: $(git config --global user.name) <$(git config --global user.email)>"
+        
         [ -e "data" ] && git add -A data || echo "data 目录不存在"
         [ -e "reports" ] && git add -A reports || echo "reports 目录不存在"
         [ -e "pics" ] && git add -A pics || echo "pics 目录不存在"
@@ -165,7 +286,24 @@ jobs:
 
         commit_message="Update lottery data and analysis reports - $(TZ='Asia/Shanghai' date +'%Y-%m-%d %H:%M:%S') (UTC+8)"
         git commit -m "$commit_message"
-        git push
+        
+        # 推送时也使用重试机制
+        for i in {1..3}; do
+          echo "尝试推送代码 (第 $i 次)..."
+          if git push; then
+            echo "✅ 代码推送成功"
+            break
+          else
+            echo "❌ 推送失败 (第 $i 次)"
+            if [ $i -lt 3 ]; then
+              echo "等待 10 秒后重试..."
+              sleep 10
+            else
+              echo "❌ 推送失败，但继续执行后续步骤"
+            fi
+          fi
+        done
+        
         echo "文件提交成功"
 
     - name: 创建重大更新的发布版本
@@ -173,7 +311,7 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        echo "准备创建发布版本..."
+        echo "🏷️ 准备创建发布版本..."
         TAG_NAME="$(TZ='Asia/Shanghai' date +'%Y%m%d')"
 
         # 先同步远端 tags，避免重复推送时报错
@@ -196,7 +334,6 @@ jobs:
         NOTES+=$'**双色球数据：**\n'
         NOTES+=$'- data/lottery_data.json - 双色球开奖数据\n'
         NOTES+=$'- data/lottery_aggregated_data.hjson - 双色球聚合分析数据\n'
-        # NOTES+=$'- reports/colorballs_analysis_report.md - 双色球分析报告\n'
         NOTES+=$'- pics/lottery_frequency_analysis.png - 双色球频率图表\n\n'
         NOTES+=$'**快乐8数据：**\n'
         NOTES+=$'- data/kl8_history.json - 快乐8开奖数据\n'
@@ -249,3 +386,9 @@ jobs:
         else
           echo "ℹ️ 彩票数据无变化，跳过提交 - $(TZ='Asia/Shanghai' date +'%Y-%m-%d %H:%M:%S') (UTC+8)"
         fi
+        
+        echo ""
+        echo "🌐 网络状态总结:"
+        echo "  网络连接: ${{ steps.network_check.outputs.network_status }}"
+        echo "  DNS解析: ${{ steps.network_check.outputs.dns_status }}"
+        echo "  API可达: ${{ steps.network_check.outputs.api_status }}"
