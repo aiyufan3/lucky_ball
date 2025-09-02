@@ -1,0 +1,25 @@
+[tool.black]
+line-length = 88
+target-version = ['py39']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+known_first_party = ["scripts", "test"]
+known_third_party = ["requests", "pandas", "numpy", "matplotlib", "seaborn", "scipy", "statsmodels", "torch", "hjson", "beautifulsoup4", "DrissionPage", "Pillow", "lxml", "urllib3", "pytest", "pytest_cov", "black", "isort", "flake8"]
+sections = ["FUTURE", "STDLIB", "THIRDPARTY", "FIRSTPARTY", "LOCALFOLDER"]
