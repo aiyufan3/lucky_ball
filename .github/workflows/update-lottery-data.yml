@@ -23,6 +23,11 @@ jobs:
       MAX_RETRIES: 5
       RETRY_DELAY: 10
       NETWORK_TIMEOUT: 60
+      # Git配置
+      GIT_AUTHOR_NAME: "luckyluckybot"
+      GIT_AUTHOR_EMAIL: "luckyluckybot@users.noreply.github.com"
+      GIT_COMMITTER_NAME: "luckyluckybot"
+      GIT_COMMITTER_EMAIL: "luckyluckybot@users.noreply.github.com"
     # 确保PR只在合并时运行，而不是简单关闭时运行
     if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
 
@@ -63,6 +68,8 @@ jobs:
       uses: actions/checkout@v4
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
+        # 确保检出深度足够，避免浅克隆问题
+        fetch-depth: 0
 
     - name: 设置Python环境
       uses: actions/setup-python@v4
@@ -271,16 +278,25 @@ jobs:
       run: |
         echo "📝 准备提交文件变更..."
         
-        # 配置Git用户身份（使用GitHub Actions的内置变量）
-        git config --global user.name "aiyufan3"
-        git config --global user.email "aiyufan3@users.noreply.github.com"
+        # 配置Git用户身份（luckyluckybot）
+        git config --global user.name "luckyluckybot"
+        git config --global user.email "luckyluckybot@users.noreply.github.com"
         
         echo "使用Git配置: $(git config --global user.name) <$(git config --global user.email)>"
         
+        # 显示当前Git状态
+        echo "🔍 当前Git状态:"
+        git status --porcelain || echo "无法获取Git状态"
+        
+        # 添加文件到暂存区
         [ -e "data" ] && git add -A data || echo "data 目录不存在"
         [ -e "reports" ] && git add -A reports || echo "reports 目录不存在"
         [ -e "pics" ] && git add -A pics || echo "pics 目录不存在"
         [ -f ".github/.last_run_utc.txt" ] && git add .github/.last_run_utc.txt
+
+        # 显示暂存区状态
+        echo "📋 暂存区状态:"
+        git diff --cached --name-only || echo "无法获取暂存区状态"
 
         if git diff --cached --quiet; then
           echo "没有文件需要提交"
@@ -288,18 +304,26 @@ jobs:
         fi
 
         commit_message="Update lottery data and analysis reports - $(TZ='Asia/Shanghai' date +'%Y-%m-%d %H:%M:%S') (UTC+8)"
-        git commit -m "$commit_message"
+        echo "💾 提交信息: $commit_message"
+        
+        # 提交代码
+        if git commit -m "$commit_message"; then
+          echo "✅ 代码提交成功"
+        else
+          echo "❌ 代码提交失败"
+          exit 1
+        fi
         
         # 推送时也使用重试机制
         for i in {1..3}; do
-          echo "尝试推送代码 (第 $i 次)..."
+          echo "🚀 尝试推送代码 (第 $i 次)..."
           if git push; then
             echo "✅ 代码推送成功"
             break
           else
             echo "❌ 推送失败 (第 $i 次)"
             if [ $i -lt 3 ]; then
-              echo "等待 10 秒后重试..."
+              echo "⏳ 等待 10 秒后重试..."
               sleep 10
             else
               echo "❌ 推送失败，但继续执行后续步骤"
@@ -307,7 +331,7 @@ jobs:
           fi
         done
         
-        echo "文件提交成功"
+        echo "🎉 文件提交和推送流程完成"
 
     - name: 创建重大更新的发布版本
       if: steps.check_changes.outputs.changed == 'true'
@@ -379,6 +403,9 @@ jobs:
 
     - name: 输出结果
       run: |
+        echo "🎯 工作流执行结果总结"
+        echo "================================"
+        
         if [ "${{ steps.check_changes.outputs.changed }}" == "true" ]; then
           echo "✅ 彩票数据已更新并提交 - $(TZ='Asia/Shanghai' date +'%Y-%m-%d %H:%M:%S') (UTC+8)"
           echo "📁 更新的文件:"
@@ -386,6 +413,11 @@ jobs:
           [ -f "reports/colorballs_analysis_report.md" ] && echo "  ✓ 双色球分析报告 (colorballs_analysis_report.md)"
           [ -f "pics/lottery_frequency_analysis.png" ] && echo "  ✓ 双色球频率图表 (lottery_frequency_analysis.png)"
           [ -f ".github/.last_run_utc.txt" ] && echo "  ✓ 心跳文件 (.github/.last_run_utc.txt)"
+          
+          # 显示Git提交信息
+          echo ""
+          echo "📝 最近的Git提交:"
+          git log --oneline -3 || echo "无法获取Git提交历史"
         else
           echo "ℹ️ 彩票数据无变化，跳过提交 - $(TZ='Asia/Shanghai' date +'%Y-%m-%d %H:%M:%S') (UTC+8)"
         fi
@@ -395,3 +427,8 @@ jobs:
         echo "  网络连接: ${{ steps.network_check.outputs.network_status }}"
         echo "  DNS解析: ${{ steps.network_check.outputs.dns_status }}"
         echo "  API可达: ${{ steps.network_check.outputs.api_status }}"
+        
+        echo ""
+        echo "🤖 执行用户: luckyluckybot"
+        echo "⏰ 执行时间: $(TZ='Asia/Shanghai' date +'%Y-%m-%d %H:%M:%S') (UTC+8)"
+        echo "================================"
