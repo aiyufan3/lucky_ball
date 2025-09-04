@@ -254,7 +254,8 @@ jobs:
         CHANGED=false
 
         # 1) 检测未跟踪(新)文件
-        UNTRACKED=$(git ls-files --others --exclude-standard -- "${TARGETS[@]}")
+        # 不使用 --exclude-standard，保证即使被 .gitignore 忽略的文件也能被检测到
+        UNTRACKED=$(git ls-files --others -- "${TARGETS[@]}")
         if [ -n "$UNTRACKED" ]; then
           echo "发现未跟踪文件:"
           echo "$UNTRACKED"
@@ -292,6 +293,19 @@ jobs:
         [ -e "data" ] && git add -A data || echo "data 目录不存在"
         [ -e "reports" ] && git add -A reports || echo "reports 目录不存在"
         [ -e "pics" ] && git add -A pics || echo "pics 目录不存在"
+
+        # 强制添加被 .gitignore 忽略但需要提交的自动生成物
+        [ -f "data/lottery_data.json" ] && git add -f data/lottery_data.json || true
+        [ -f "data/kl8_history.json" ] && git add -f data/kl8_history.json || true
+        [ -f "data/lottery_aggregated_data.hjson" ] && git add -f data/lottery_aggregated_data.hjson || true
+        # reports 下的 Markdown（存在时再添加，避免 glob 展开失败）
+        ls reports/*.md >/dev/null 2>&1 && git add -f reports/*.md || true
+        # 需要发布到仓库的图片（存在时再添加）
+        [ -f "pics/lottery_frequency_analysis.png" ] && git add -f pics/lottery_frequency_analysis.png || true
+        [ -f "pics/kl8_frequency_hist.png" ] && git add -f pics/kl8_frequency_hist.png || true
+        [ -f "pics/kl8_ema_heatmap.png" ] && git add -f pics/kl8_ema_heatmap.png || true
+        [ -f "pics/kl8_overlap_compare.png" ] && git add -f pics/kl8_overlap_compare.png || true
+        [ -f "pics/kl8_dual_frequency_style.png" ] && git add -f pics/kl8_dual_frequency_style.png || true
         [ -f ".github/.last_run_utc.txt" ] && git add .github/.last_run_utc.txt
 
         # 显示暂存区状态

@@ -204,6 +204,18 @@ data/lottery_aggregated_data.hjson
 pics/*.png
 reports/*.md
 
+# 允许 CI 提交以下自动产物
+!data/lottery_data.json
+!data/kl8_history.json
+!data/payouts_kl8.json
+!data/lottery_aggregated_data.hjson
+!pics/lottery_frequency_analysis.png
+!pics/kl8_frequency_hist.png
+!pics/kl8_ema_heatmap.png
+!pics/kl8_overlap_compare.png
+!pics/kl8_dual_frequency_style.png
+!reports/*.md
+
 # Code formatting cache
 .ruff_cache/
 .mypy_cache/
