@@ -24,10 +24,10 @@ jobs:
       RETRY_DELAY: 10
       NETWORK_TIMEOUT: 60
       # Git配置
-      GIT_AUTHOR_NAME: "ANEBOT"
-      GIT_AUTHOR_EMAIL: "ANEBOT@users.noreply.github.com"
-      GIT_COMMITTER_NAME: "ANEBOT"
-      GIT_COMMITTER_EMAIL: "ANEBOT@users.noreply.github.com"
+      GIT_AUTHOR_NAME: "dependabot"
+      GIT_AUTHOR_EMAIL: "dependabot@users.noreply.github.com"
+      GIT_COMMITTER_NAME: "dependabot"
+      GIT_COMMITTER_EMAIL: "dependabot@users.noreply.github.com"
     # 确保PR只在合并时运行，而不是简单关闭时运行
     if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
 
@@ -280,8 +280,8 @@ jobs:
         echo "📝 准备提交文件变更..."
         
         # 配置Git用户身份（ANEBOT）
-        git config --global user.name "ANEBOT"
-        git config --global user.email "ANEBOT@users.noreply.github.com"
+        git config --global user.name "dependabot"
+        git config --global user.email "dependabot@users.noreply.github.com"
         
         echo "使用Git配置: $(git config --global user.name) <$(git config --global user.email)>"
         
