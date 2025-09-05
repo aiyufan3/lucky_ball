@@ -24,10 +24,10 @@ jobs:
       RETRY_DELAY: 10
       NETWORK_TIMEOUT: 60
       # Git配置
-      GIT_AUTHOR_NAME: "dependabot[bot]"
-      GIT_AUTHOR_EMAIL: "dependabot@github.com"
-      GIT_COMMITTER_NAME: "dependabot[bot]"
-      GIT_COMMITTER_EMAIL: "dependabot@github.com"
+      GIT_AUTHOR_NAME: "github-actions[bot]"
+      GIT_AUTHOR_EMAIL: "github-actions[bot]@users.noreply.github.com"
+      GIT_COMMITTER_NAME: "github-actions[bot]"
+      GIT_COMMITTER_EMAIL: "github-actions[bot]@users.noreply.github.com"
     # 确保PR只在合并时运行，而不是简单关闭时运行
     if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
 
@@ -279,9 +279,9 @@ jobs:
       run: |
         echo "📝 准备提交文件变更..."
         
-        # 配置Git用户身份（Dependabot）
-        git config user.name "dependabot[bot]"
-        git config user.email "dependabot@github.com"
+        # 配置Git用户身份（GitHub Actions）
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
         
         echo "使用Git配置: $(git config user.name) <$(git config user.email)>"
         
@@ -443,6 +443,6 @@ jobs:
         echo "  API可达: ${{ steps.network_check.outputs.api_status }}"
         
         echo ""
-        echo "🤖 执行用户: dependabot[bot]"
+        echo "🤖 执行用户: github-actions[bot]"
         echo "⏰ 执行时间: $(TZ='Asia/Shanghai' date +'%Y-%m-%d %H:%M:%S') (UTC+8)"
         echo "================================"
