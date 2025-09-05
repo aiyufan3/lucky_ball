@@ -1,0 +1,50 @@
+# Dependabot配置文件
+# 用于自动管理Python项目依赖的版本更新
+
+version: 2
+updates:
+  # Python依赖管理 (pip)
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Shanghai"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "aiyufan"
+    assignees:
+      - "aiyufan"
+    commit-message:
+      prefix: "deps"
+      prefix-development: "deps-dev"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "python"
+    # 忽略特定包的更新
+    ignore:
+      # 如果某些包有兼容性问题，可以在这里忽略
+      # - dependency-name: "package-name"
+      #   update-types: ["version-update:semver-major"]
+    
+  # GitHub Actions依赖管理
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Shanghai"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "aiyufan"
+    assignees:
+      - "aiyufan"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    labels:
+      - "github-actions"
+      - "ci"
