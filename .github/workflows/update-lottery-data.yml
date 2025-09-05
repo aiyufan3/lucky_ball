@@ -280,10 +280,10 @@ jobs:
         echo "📝 准备提交文件变更..."
         
         # 配置Git用户身份（Dependabot）
-        git config --global user.name "dependabot[bot]"
-        git config --global user.email "dependabot@github.com"
+        git config user.name "dependabot[bot]"
+        git config user.email "dependabot@github.com"
         
-        echo "使用Git配置: $(git config --global user.name) <$(git config --global user.email)>"
+        echo "使用Git配置: $(git config user.name) <$(git config user.email)>"
         
         # 显示当前Git状态
         echo "🔍 当前Git状态:"
