@@ -254,6 +254,6 @@ This project is released under the **MIT License**. See [LICENSE](LICENSE).
 ---
 
 ## Acknowledgements
-- Original author: [snjyor](https://github.com/snjyor)
+- Original author: [snjyor](https://github.com/snjyor) (forked and maintained by brain404)
 - China Welfare Lottery for open data endpoints
 - All open‑source libraries used by this project

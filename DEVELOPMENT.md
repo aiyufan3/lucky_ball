@@ -30,8 +30,8 @@ python3 -m isort scripts/ test/
 本项目使用专用的Git用户配置：
 
 ```bash
-git config user.name "luckyluckybot"
-git config user.email "luckyluckybot@example.com"
+git config user.name "ANEBOT"
+git config user.email "ANEBOT@example.com"
 ```
 
 这些配置仅适用于本项目，不会影响全局Git设置。
