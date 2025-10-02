@@ -8,7 +8,7 @@
     lottery_type: 双色球
     lottery_type_en: double_color_ball
     game_rules: 红球1-33选6个，蓝球1-16选1个
-    generated_time: 2025年10月01日 23:15:39
+    generated_time: 2025年10月02日 23:15:44
     timezone: UTC+8
     total_periods: 1920
     latest_period: "2025113"
@@ -561,39 +561,19 @@
         description: LSTM+ARIMA+MonteCarlo 低熵组合
         red_balls:
         [
+          1
           9
-          10
           11
-          14
-          17
-          18
-        ]
-        blue_ball: 15
-        characteristics:
-        {
-          odd_even_ratio: 3奇3偶
-          sum_value: 79
-          span_value: 9
-        }
-      }
-      {
-        strategy_name: ML低熵
-        description: LSTM+ARIMA+MonteCarlo 低熵组合
-        red_balls:
-        [
-          9
-          14
           16
           17
-          18
-          25
+          28
         ]
-        blue_ball: 15
+        blue_ball: 8
         characteristics:
         {
-          odd_even_ratio: 3奇3偶
-          sum_value: 99
-          span_value: 16
+          odd_even_ratio: 4奇2偶
+          sum_value: 82
+          span_value: 27
         }
       }
       {
@@ -603,37 +583,17 @@
         [
           6
           9
-          14
-          17
-          24
-          26
-        ]
-        blue_ball: 15
-        characteristics:
-        {
-          odd_even_ratio: 2奇4偶
-          sum_value: 96
-          span_value: 20
-        }
-      }
-      {
-        strategy_name: ML低熵
-        description: LSTM+ARIMA+MonteCarlo 低熵组合
-        red_balls:
-        [
-          2
-          9
-          12
-          14
+          16
           17
           18
+          25
         ]
-        blue_ball: 8
+        blue_ball: 14
         characteristics:
         {
-          odd_even_ratio: 2奇4偶
-          sum_value: 72
-          span_value: 16
+          odd_even_ratio: 3奇3偶
+          sum_value: 91
+          span_value: 19
         }
       }
       {
@@ -641,19 +601,19 @@
         description: LSTM+ARIMA+MonteCarlo 低熵组合
         red_balls:
         [
-          8
+          7
           9
           11
           13
           14
           17
         ]
-        blue_ball: 15
+        blue_ball: 14
         characteristics:
         {
-          odd_even_ratio: 4奇2偶
-          sum_value: 72
-          span_value: 9
+          odd_even_ratio: 5奇1偶
+          sum_value: 71
+          span_value: 10
         }
       }
       {
@@ -662,18 +622,18 @@
         red_balls:
         [
           9
+          10
+          11
+          15
           16
           17
-          18
-          23
-          26
         ]
         blue_ball: 8
         characteristics:
         {
-          odd_even_ratio: 3奇3偶
-          sum_value: 109
-          span_value: 17
+          odd_even_ratio: 4奇2偶
+          sum_value: 78
+          span_value: 8
         }
       }
       {
@@ -688,7 +648,7 @@
           16
           17
         ]
-        blue_ball: 15
+        blue_ball: 14
         characteristics:
         {
           odd_even_ratio: 3奇3偶
@@ -703,17 +663,57 @@
         [
           9
           11
+          13
           16
           17
-          30
           32
         ]
         blue_ball: 16
         characteristics:
         {
-          odd_even_ratio: 3奇3偶
-          sum_value: 115
+          odd_even_ratio: 4奇2偶
+          sum_value: 98
           span_value: 23
+        }
+      }
+      {
+        strategy_name: ML低熵
+        description: LSTM+ARIMA+MonteCarlo 低熵组合
+        red_balls:
+        [
+          6
+          9
+          13
+          16
+          17
+          21
+        ]
+        blue_ball: 14
+        characteristics:
+        {
+          odd_even_ratio: 4奇2偶
+          sum_value: 82
+          span_value: 15
+        }
+      }
+      {
+        strategy_name: ML低熵
+        description: LSTM+ARIMA+MonteCarlo 低熵组合
+        red_balls:
+        [
+          9
+          10
+          11
+          13
+          17
+          18
+        ]
+        blue_ball: 14
+        characteristics:
+        {
+          odd_even_ratio: 4奇2偶
+          sum_value: 78
+          span_value: 9
         }
       }
     ]
